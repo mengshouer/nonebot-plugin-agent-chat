@@ -1,0 +1,12 @@
+{
+  "protocol": "anthropic-messages",
+  "model": "replace-with-anthropic-model",
+  "api_key_env": "ANTHROPIC_API_KEY",
+  "system_prompt": "Answer clearly and concisely. Use web_search for current information.",
+  "search_mode": "exa",
+  "exa_api_key_env": "EXA_API_KEY",
+  "exa_num_results": 5,
+  "fallback_profiles": [],
+  "max_output_tokens": 4096,
+  "request_timeout_seconds": 120
+}

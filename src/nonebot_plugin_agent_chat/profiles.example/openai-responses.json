@@ -1,0 +1,11 @@
+{
+  "protocol": "openai-responses",
+  "model": "replace-with-openai-responses-model",
+  "api_key_env": "OPENAI_API_KEY",
+  "system_prompt": "Answer clearly and concisely. Use web search for current information.",
+  "search_mode": "builtin_web_search",
+  "max_builtin_tool_calls": 10,
+  "fallback_profiles": [],
+  "max_output_tokens": 4096,
+  "request_timeout_seconds": 120
+}

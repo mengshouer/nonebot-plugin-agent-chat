@@ -1,0 +1,126 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nonebot-plugin-agent-chat"
+version = "0.1.0"
+description = "A bounded multi-provider LLM agent plugin for NoneBot2"
+readme = "README.md"
+requires-python = ">=3.10,<4.0"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+  "nonebot2",
+  "onebot",
+  "telegram",
+  "alconna",
+  "llm",
+  "agent",
+  "openai",
+  "anthropic",
+  "exa",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: AsyncIO",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Typing :: Typed",
+]
+dependencies = [
+  "nonebot2>=2.5,<3",
+  # Adapter-neutral parsing, message conversion, and media fetching.
+  "nonebot-plugin-alconna>=0.61.1,<1",
+  "pydantic>=2.7,<3",
+  "openai>=2.30,<3",
+  "anthropic>=0.87,<1",
+  "aiosqlite>=0.20,<1",
+  "exa-py>=2.20,<3",
+  "httpx>=0.28.1,<1",
+  "httpcore>=1.0.9,<1.1",
+  "python-dotenv>=1.0.1,<2",
+]
+
+[project.urls]
+Homepage = "https://github.com/mengshouer/nonebot-plugin-agent-chat"
+Repository = "https://github.com/mengshouer/nonebot-plugin-agent-chat"
+Issues = "https://github.com/mengshouer/nonebot-plugin-agent-chat/issues"
+
+[project.optional-dependencies]
+# Renders marked-up answers to images. Optional so a plain install stays light;
+# without it the plugin delivers answers as text and reports the reason.
+render-image = [
+  "playwright>=1.62,<2",
+  "markdown-it-py>=4,<5",
+  "pygments>=2.20,<3",
+]
+# The interactive settings/profile editors (--config-edit / --profile-edit):
+# a full-screen textual app. The flags stay the scriptable base and need no
+# extra.
+tui = ["textual>=8,<9"]
+# Native adapters stay optional: a host installs only the platforms it runs.
+onebot-v11 = ["nonebot-adapter-onebot>=2.4.6,<3"]
+# The Telegram adapter ships beta wheels whose event API still moves; keep the
+# exact build this release was tested against until it stabilises.
+telegram = ["nonebot-adapter-telegram==0.1.0b20"]
+adapters = [
+  "nonebot-adapter-onebot>=2.4.6,<3",
+  "nonebot-adapter-telegram==0.1.0b20",
+]
+
+[project.scripts]
+nonebot-agent-chat = "nonebot_plugin_agent_chat.cli:main"
+
+[dependency-groups]
+dev = [
+  # Mirrors the [tui] extra so the dev venv keeps it (uv sync prunes extras);
+  # the editor tests skip themselves when textual is absent, as in CI.
+  "textual>=8,<9",
+  "build>=1.2,<2",
+  "pyright>=1.1,<2",
+  "ruff>=0.11,<1",
+  "twine>=6,<7",
+]
+
+[tool.hatch.build.targets.wheel]
+core-metadata-version = "2.4"
+packages = ["src/nonebot_plugin_agent_chat"]
+
+# A pip install has no repository checkout, so the copyable settings example
+# ships inside the package too (kept in sync by the build itself).
+[tool.hatch.build.targets.wheel.force-include]
+".env.example" = "nonebot_plugin_agent_chat/env.example"
+
+[tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
+include = [
+  "/src",
+  "/tests",
+  "/scripts",
+  "/.env.example",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/README.md",
+  "/docs",
+  "/CONTRIBUTING.md",
+  "/pyproject.toml",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+# Ruff defaults plus line length, which `ruff format` does not enforce.
+extend-select = ["E501"]
+
+[tool.pyright]
+# Type-check the shipped package against the minimum supported Python.
+include = ["src/nonebot_plugin_agent_chat"]
+pythonVersion = "3.10"
+venvPath = "."
+venv = ".venv"
