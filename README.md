@@ -2,11 +2,15 @@
 
 给 NoneBot2 添加多模型 AI 问答：支持 OpenAI 兼容接口、Anthropic、搜索、图片输入，以及可选的图片回复和持久对话。
 
-> **0.x Alpha**：主要支持 OneBot V11 和 Telegram，其他聊天平台的兼容性待验证。配置与扩展 API 仍可能调整。需要自行提供模型服务的 API 凭据，调用可能产生费用。
-
 ## 安装
 
-需要 Python 3.10+ 和已有的 NoneBot2 Bot。在 **Bot 使用的 Python 环境**中从 GitHub 源码安装：
+需要 Python 3.10+ 和已有的 NoneBot2 Bot。在 **Bot 使用的 Python 环境**中从 PyPI 安装：
+
+```bash
+python -m pip install "nonebot-plugin-agent-chat"
+```
+
+如果要使用尚未发布的开发版，再从 GitHub 源码安装：
 
 ```bash
 git clone https://github.com/mengshouer/nonebot-plugin-agent-chat.git
@@ -100,10 +104,10 @@ AGENT_CHAT_TRIGGERS=["/ask"]
 
 ### 图片回复
 
-在 Bot 的 Python 环境中安装额外依赖（替换下面的源码路径），并安装 Chromium：
+在 Bot 的 Python 环境中安装额外依赖，并安装 Chromium：
 
 ```bash
-python -m pip install "/path/to/nonebot-plugin-agent-chat[render-image]"
+python -m pip install "nonebot-plugin-agent-chat[render-image]"
 python -m playwright install chromium
 # Linux 若缺系统依赖，可使用：python -m playwright install --with-deps chromium
 ```
