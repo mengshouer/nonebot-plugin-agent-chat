@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nonebot-plugin-agent-chat"
-version = "0.1.0"
+version = "0.1.1"
 description = "A bounded multi-provider LLM agent plugin for NoneBot2"
 readme = "README.md"
 requires-python = ">=3.10,<4.0"
@@ -35,6 +35,8 @@ dependencies = [
   "nonebot2>=2.5,<3",
   # Adapter-neutral parsing, message conversion, and media fetching.
   "nonebot-plugin-alconna>=0.61.1,<1",
+  # Managed locations for user data, config, and cache files.
+  "nonebot-plugin-localstore>=0.7.4,<1",
   "pydantic>=2.7,<3",
   "openai>=2.30,<3",
   "anthropic>=0.87,<1",
@@ -64,12 +66,12 @@ render-image = [
 tui = ["textual>=8,<9"]
 # Native adapters stay optional: a host installs only the platforms it runs.
 onebot-v11 = ["nonebot-adapter-onebot>=2.4.6,<3"]
-# The Telegram adapter ships beta wheels whose event API still moves; keep the
-# exact build this release was tested against until it stabilises.
-telegram = ["nonebot-adapter-telegram==0.1.0b20"]
+# The Telegram adapter ships beta wheels whose event API still moves; allow
+# later 0.1.x builds but not a new minor series.
+telegram = ["nonebot-adapter-telegram>=0.1.0b20,<0.2"]
 adapters = [
   "nonebot-adapter-onebot>=2.4.6,<3",
-  "nonebot-adapter-telegram==0.1.0b20",
+  "nonebot-adapter-telegram>=0.1.0b20,<0.2",
 ]
 
 [project.scripts]
@@ -93,7 +95,7 @@ packages = ["src/nonebot_plugin_agent_chat"]
 # A pip install has no repository checkout, so the copyable settings example
 # ships inside the package too (kept in sync by the build itself).
 [tool.hatch.build.targets.wheel.force-include]
-".env.example" = "nonebot_plugin_agent_chat/env.example"
+".env.agent_chat.example" = "nonebot_plugin_agent_chat/env.agent_chat.example"
 
 [tool.hatch.build.targets.sdist]
 core-metadata-version = "2.4"
@@ -101,7 +103,7 @@ include = [
   "/src",
   "/tests",
   "/scripts",
-  "/.env.example",
+  "/.env.agent_chat.example",
   "/CHANGELOG.md",
   "/LICENSE",
   "/README.md",

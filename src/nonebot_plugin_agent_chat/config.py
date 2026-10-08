@@ -1,15 +1,71 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from nonebot.config import BaseSettings
-from pydantic import ConfigDict, Field, ValidationInfo, field_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from .models import ImageReplyMode
 from .platforms import SupportScope, scope_value
 
 # A chunk below this length would only add noise; 0 means "no plugin limit".
 MIN_CHUNK_CHARS = 200
+
+# Layout used before the plugin moved its files under nonebot-plugin-localstore.
+LEGACY_DATA_DIR = Path("data/agent_chat")
+LEGACY_LAYOUT_MARKERS = (
+    "agent_chat.db",
+    "profiles",
+    "prompts",
+    "images",
+)
+
+
+def _localstore_dirs() -> tuple[Path, Path] | None:
+    """``(data_dir, profile_dir)`` from nonebot-plugin-localstore.
+
+    The store reads the driver config and identifies the calling plugin, so it
+    is unavailable to the standalone CLI and to tests that import the package
+    without initializing NoneBot; those keep the checkout layout.
+    """
+
+    try:
+        import nonebot_plugin_localstore as store
+
+        # Importing the store already reads the driver config, so an
+        # uninitialized NoneBot fails here rather than at the calls below.
+        return store.get_plugin_data_dir(), store.get_plugin_config_dir() / "profiles"
+    except (ImportError, ValueError, RuntimeError):
+        return None
+
+
+def _has_legacy_layout() -> bool:
+    """Whether the checkout contains actual plugin data from the old layout."""
+
+    return LEGACY_DATA_DIR.is_dir() and any(
+        (LEGACY_DATA_DIR / marker).exists() for marker in LEGACY_LAYOUT_MARKERS
+    )
+
+
+def _default_dirs() -> tuple[Path, Path]:
+    """Return one consistent pair of default data and profile directories.
+
+    An existing legacy layout wins, so upgrading never strands user files. A
+    CLI-only ``data/agent_chat/debug`` directory is not enough to opt a fresh
+    bot into the legacy layout.
+    """
+
+    legacy = (LEGACY_DATA_DIR, LEGACY_DATA_DIR / "profiles")
+    if _has_legacy_layout():
+        return legacy
+    return _localstore_dirs() or legacy
 
 
 def _check_chunk_size(value: int, label: str) -> int:
@@ -23,6 +79,25 @@ class Config(BaseSettings):
 
     agent_chat_data_dir: Path = Path("data/agent_chat")
     agent_chat_profile_dir: Path = Path("data/agent_chat/profiles")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _resolve_storage_dirs(cls, values: Any) -> Any:
+        """Fill missing directory settings from one consistent default pair."""
+
+        if not isinstance(values, dict):
+            return values
+        data = dict(values)
+        missing_data = "agent_chat_data_dir" not in data
+        missing_profiles = "agent_chat_profile_dir" not in data
+        if missing_data or missing_profiles:
+            default_data, default_profiles = _default_dirs()
+            if missing_data:
+                data["agent_chat_data_dir"] = default_data
+            if missing_profiles:
+                data["agent_chat_profile_dir"] = default_profiles
+        return data
+
     agent_chat_default_profile: str | None = None
     agent_chat_default_system_prompt_file: str = "default.md"
     agent_chat_cleanup_interval_seconds: float = Field(default=3600.0, ge=0)

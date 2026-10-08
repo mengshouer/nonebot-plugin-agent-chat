@@ -45,7 +45,7 @@ def main() -> None:
             "nonebot_plugin_agent_chat/profiles.example/anthropic-exa.json",
             "nonebot_plugin_agent_chat/profiles.example/anthropic-web-search.json",
             "nonebot_plugin_agent_chat/prompts.example/default.md",
-            "nonebot_plugin_agent_chat/env.example",
+            "nonebot_plugin_agent_chat/env.agent_chat.example",
         }
         missing = sorted(required - names)
         if missing:

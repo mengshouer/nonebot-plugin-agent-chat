@@ -22,7 +22,7 @@ from typing import Literal
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from . import env_file
-from .config import Config
+from .config import Config, _default_dirs
 from .errors import ConfigurationError, InputError
 
 logger = logging.getLogger(__name__)
@@ -358,6 +358,9 @@ def build_editing_config(
     environment = os.environ if environ is None else environ
     normalized = {key.upper(): value for key, value in environment.items()}
     values = Config.model_construct().model_dump()
+    default_data_dir, default_profile_dir = _default_dirs()
+    values["agent_chat_data_dir"] = default_data_dir
+    values["agent_chat_profile_dir"] = default_profile_dir
     invalid: list[str] = []
     for key, field in KEY_TO_FIELD.items():
         if key not in normalized:

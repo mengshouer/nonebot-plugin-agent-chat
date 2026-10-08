@@ -128,7 +128,7 @@ class ProviderProfileTests(unittest.TestCase):
 class ProfileRegistryTests(unittest.TestCase):
     def test_committed_template_matches_committed_profiles(self) -> None:
         repository = Path(__file__).resolve().parents[1]
-        values = dotenv_values(repository / ".env.example")
+        values = dotenv_values(repository / ".env.agent_chat.example")
         profile_dir = repository / "src/nonebot_plugin_agent_chat/profiles.example"
         default = values.get("AGENT_CHAT_DEFAULT_PROFILE")
         registry = ProfileRegistry(profile_dir, default)

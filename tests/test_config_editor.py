@@ -271,7 +271,7 @@ class EnvExampleContractTests(unittest.TestCase):
         from dotenv import dotenv_values
 
         repository = Path(__file__).resolve().parents[1]
-        values = dotenv_values(repository / ".env.example")
+        values = dotenv_values(repository / ".env.agent_chat.example")
         known = set(config_editor.KEY_TO_FIELD) | set(config_editor.CLI_ONLY_KEYS)
         unknown = sorted(
             key for key in values if key.startswith("AGENT_CHAT_") and key not in known

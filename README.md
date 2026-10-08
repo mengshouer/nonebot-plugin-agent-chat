@@ -4,31 +4,37 @@
 
 ## 安装
 
-需要 Python 3.10+ 和已有的 NoneBot2 Bot。在 **Bot 使用的 Python 环境**中从 PyPI 安装：
+需要 Python 3.10+ 和已有的 NoneBot2 Bot。在 Bot 目录用 NB-CLI 安装，它会自动把插件写入列表：
+
+```bash
+nb plugin install nonebot-plugin-agent-chat
+```
+
+也可以手动安装，再把插件追加到 Bot 的 `pyproject.toml` 列表（不要覆盖其他插件）：
 
 ```bash
 python -m pip install "nonebot-plugin-agent-chat"
 ```
-
-如果要使用尚未发布的开发版，再从 GitHub 源码安装：
-
-```bash
-git clone https://github.com/mengshouer/nonebot-plugin-agent-chat.git
-python -m pip install "./nonebot-plugin-agent-chat"
-```
-
-插件沿用 Bot 已安装并注册的适配器。在 Bot 的 `pyproject.toml` 中，将插件追加到现有列表，不要覆盖其他插件：
 
 ```toml
 [tool.nonebot]
 plugins = ["nonebot_plugin_agent_chat"]
 ```
 
+可选依赖（图片回复、TUI 编辑器）需要用 pip 安装，见下文。插件沿用 Bot 已安装并注册的适配器。
+
+如果要使用尚未发布的开发版，从 GitHub 源码安装：
+
+```bash
+git clone https://github.com/mengshouer/nonebot-plugin-agent-chat.git
+python -m pip install "./nonebot-plugin-agent-chat"
+```
+
 不要同时加载本插件的目录副本，否则会重复注册。
 
 ## 最少配置
 
-以下以一个 OpenAI Chat Completions 兼容服务为例。**配置文件都放在 Bot 工作目录，而不是插件源码目录**；已有文件请合并内容，不要直接覆盖。
+以下以一个 OpenAI Chat Completions 兼容服务为例。`.env.agent_chat` 放在 **Bot 工作目录**，Profile 与运行时数据目录按下文规则决定；已有文件请合并内容，不要直接覆盖。
 
 ### 1. 配置凭据和权限
 
@@ -53,11 +59,11 @@ nonebot-agent-chat --platform-list
 - **默认不允许普通用户使用**。只放行你信任的群或用户，避免意外调用费用。
 - NoneBot 的 `SUPERUSERS` 不受上述白名单限制，支持框架的裸 ID 和 adapter 限定 ID 写法。
 - 白名单必须包含平台前缀，裸 ID 会报错；`QQClient:*` 等通配符会放行该平台全部目标，谨慎使用。
-- 将凭据文件和 `data/agent_chat/` 加入 **Bot 自己的 `.gitignore`**；插件仓库的规则不会替宿主生效。Linux/macOS 可执行 `chmod 600 .env.agent_chat` 限制文件权限。
+- 将凭据文件和实际使用的数据/配置目录（见下文）加入 **Bot 自己的 `.gitignore`**；插件仓库的规则不会替宿主生效。Linux/macOS 可执行 `chmod 600 .env.agent_chat` 限制文件权限。
 
 ### 2. 配置模型
 
-创建 `data/agent_chat/profiles/openai-chat.json`，将 `model` 替换为服务商提供的模型 ID：
+创建 Profile 文件，将 `model` 替换为服务商提供的模型 ID。默认位置由 [`nonebot-plugin-localstore`](https://github.com/nonebot/plugin-localstore) 决定，Linux 上通常是 `~/.config/nonebot2/nonebot_plugin_agent_chat/profiles/`；如果 Bot 工作目录下已经存在 `data/agent_chat/` 中的既有插件数据，则继续使用 `data/agent_chat/profiles/`。不确定用哪个目录时，在 `.env.agent_chat` 里显式设置 `AGENT_CHAT_PROFILE_DIR`，这样 Bot 和 CLI 会使用同一目录：
 
 ```json
 {
@@ -148,7 +154,7 @@ nonebot-agent-chat --profile openai-chat "你好"
 - **改配置没生效？** 手动修改后执行 `/agentctl reload`；提示需重启的项要重启 Bot。
 - **没有转成图片？** 确认安装了 extra 和匹配的 Chromium，查看 status；Telegram 有默认关闭图片回复的平台覆盖。
 
-全部配置说明：[`.env.example`](.env.example)、`nonebot-agent-chat --config-list`、`nonebot-agent-chat --config-explain <KEY>`。
+全部配置说明：[`.env.agent_chat.example`](.env.agent_chat.example)、`nonebot-agent-chat --config-list`、`nonebot-agent-chat --config-explain <KEY>`。
 
 更多功能见[高级用法](docs/advanced.md)，变更见[更新记录](CHANGELOG.md)，开发与反馈见[贡献指引](CONTRIBUTING.md)。
 

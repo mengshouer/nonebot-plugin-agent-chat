@@ -1,12 +1,12 @@
 # 高级用法
 
-首次安装见 [README](../README.md)。所有相对路径均以 **Bot 工作目录**为基准。
+首次安装见 [README](../README.md)。相对路径均以 **Bot 工作目录**为基准；未显式指定的数据与配置目录可能落在 `nonebot-plugin-localstore` 管理的位置（见下文）。
 
 ## 配置与重载
 
 平台标识区分大小写，例如 `QQClient`、`Telegram`，不是适配器包名。`nonebot-agent-chat --platform-list` 可在未配置 Bot 时查询，附加 `--json` 输出结构化列表；这不是已连接平台的清单。白名单、平台覆盖和 Profile 规则使用同一套平台标识。NoneBot `SUPERUSERS` 的适配器前缀是另一套规则，与这里的平台标识不同。
 
-默认配置文件是 `.env.agent_chat`；Profile、Prompt 分别位于 `data/agent_chat/profiles/` 和 `data/agent_chat/prompts/`。启动前可用 `AGENT_CHAT_ENV_FILE` 指定其他配置文件。
+默认配置文件是 `.env.agent_chat`。Profile 默认存放在 `nonebot-plugin-localstore` 的插件配置目录（Linux 通常为 `~/.config/nonebot2/nonebot_plugin_agent_chat/profiles/`），Prompt 存放在插件数据目录的 `prompts/`（通常为 `~/.local/share/nonebot2/nonebot_plugin_agent_chat/prompts/`）；若 Bot 工作目录下已有 `data/agent_chat/` 中的既有插件数据，两者都继续沿用该旧目录。需要在 Bot 与 CLI 之间保持一致时，在 `.env.agent_chat` 里显式设置 `AGENT_CHAT_PROFILE_DIR` 与 `AGENT_CHAT_DATA_DIR`。启动前可用 `AGENT_CHAT_ENV_FILE` 指定其他配置文件。
 
 ```bash
 nonebot-agent-chat --config-list
@@ -16,7 +16,7 @@ nonebot-agent-chat --config-unset AGENT_CHAT_MAX_SEARCHES
 nonebot-agent-chat --reload
 ```
 
-清单显示当前值、来源和是否需重启。常用示例见 [`.env.example`](../.env.example)，安装包中对应 `nonebot_plugin_agent_chat/env.example`。配置和 Profile 命令支持 `--json` 输出。
+清单显示当前值、来源和是否需重启。常用示例见 [`.env.agent_chat.example`](../.env.agent_chat.example)，安装包中对应 `nonebot_plugin_agent_chat/env.agent_chat.example`。配置和 Profile 命令支持 `--json` 输出。
 
 手改文件后执行 `/agentctl reload` 或 `nonebot-agent-chat --reload`。CLI 编辑会写重载标记，Bot 在下一条消息路由前处理，并发消息等待已开始的重载完成。配置不自动轮询；解析或校验失败保留旧配置，并在 status 中记录错误。
 
@@ -112,7 +112,7 @@ nonebot-agent-chat --render-image out.png --render-input answer.md
 
 ## CLI 与交互编辑器
 
-CLI 不启动 NoneBot，默认调试数据写到 `data/agent_chat/debug/`。不带问题进入交互会话：
+CLI 不启动 NoneBot（因此不解析 localstore 目录），默认调试数据写到 `data/agent_chat/debug/`；要与 Bot 使用同一数据目录，请显式设置 `AGENT_CHAT_DATA_DIR` 或传 `--data-dir`。不带问题进入交互会话：
 
 ```bash
 nonebot-agent-chat

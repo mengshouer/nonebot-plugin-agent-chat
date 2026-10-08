@@ -71,18 +71,42 @@ with warnings.catch_warnings(record=True) as caught:
 
     def test_dependency_is_registered_before_scope_import(self) -> None:
         code = """
+from pathlib import Path
+
 import nonebot
 
-nonebot.init(driver="~none")
+nonebot.init(driver="~none", localstore_use_cwd=True)
 plugin = nonebot.load_plugin("nonebot_plugin_agent_chat")
 assert plugin is not None, "agent-chat failed to load"
 assert nonebot.get_plugin("nonebot_plugin_alconna") is not None
+assert nonebot.get_plugin("nonebot_plugin_localstore") is not None
+
+# The store requires these metadata fields before a plugin is accepted.
+metadata = plugin.metadata
+assert metadata is not None
+assert metadata.type == "application"
+assert metadata.homepage == "https://github.com/mengshouer/nonebot-plugin-agent-chat"
+assert metadata.config is not None
+assert metadata.supported_adapters, "adapter support must be declared"
+
+# Exercise localstore's real caller-plugin detection, not only a fake module.
+from nonebot_plugin_agent_chat.config import Config
+config = Config()
+assert config.agent_chat_data_dir == Path.cwd() / "data" / "nonebot_plugin_agent_chat"
+assert config.agent_chat_profile_dir == (
+    Path.cwd() / "config" / "nonebot_plugin_agent_chat" / "profiles"
+)
 """
         with tempfile.TemporaryDirectory() as directory:
             result = subprocess.run(
                 [sys.executable, "-c", code],
                 cwd=directory,
-                env={"PATH": os.defpath, "PYTHONDONTWRITEBYTECODE": "1"},
+                # HOME keeps the resolved store directories inside the sandbox.
+                env={
+                    "PATH": os.defpath,
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    "HOME": directory,
+                },
                 capture_output=True,
                 text=True,
                 timeout=30,
