@@ -130,16 +130,19 @@ run_package() {
   # must work too: a failed install is a failed package check, never a silent skip.
   "$temporary/venv/bin/playwright" install --with-deps chromium
 
-  mkdir -p "$temporary/profiles"
-  cat > "$temporary/profiles/smoke.json" <<'JSON'
+  # The plugin keeps its files where nonebot-plugin-localstore says, so the
+  # smoke run points the store at the temporary directory instead of the real
+  # user directories. The store reads this from the driver config, i.e. from the
+  # process environment set before nonebot.init().
+  local store_profiles="$temporary/data/nonebot_plugin_agent_chat/profiles"
+  mkdir -p "$store_profiles"
+  cat > "$store_profiles/smoke.json" <<'JSON'
 {
   "protocol": "openai-responses",
   "model": "smoke-model"
 }
 JSON
   cat > "$temporary/plugin.env" <<EOF
-AGENT_CHAT_PROFILE_DIR=$temporary/profiles
-AGENT_CHAT_DATA_DIR=$temporary/data
 AGENT_CHAT_DEFAULT_PROFILE=smoke
 AGENT_CHAT_CLEANUP_INTERVAL_SECONDS=0
 AGENT_CHAT_MESSAGE_SEND_DELAY_SECONDS=0
@@ -147,10 +150,10 @@ EOF
 
   (
     cd "$temporary"
+    export LOCALSTORE_DATA_DIR="$temporary/data"
     AGENT_CHAT_ENV_FILE="$temporary/plugin.env" \
       "$temporary/venv/bin/python" "$ROOT/scripts/smoke_plugin.py"
-    "$temporary/venv/bin/nonebot-agent-chat" \
-      --no-env --profiles-dir "$temporary/profiles" --check
+    "$temporary/venv/bin/nonebot-agent-chat" --no-env --check
     "$temporary/venv/bin/python" -m nonebot_plugin_agent_chat --help >/dev/null
   )
 

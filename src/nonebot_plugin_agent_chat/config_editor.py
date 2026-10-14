@@ -22,7 +22,7 @@ from typing import Literal
 from pydantic import BaseModel, SecretStr, ValidationError
 
 from . import env_file
-from .config import Config, _default_dirs
+from .config import Config
 from .errors import ConfigurationError, InputError
 
 logger = logging.getLogger(__name__)
@@ -32,13 +32,13 @@ SENSITIVE_MARKERS = ("key", "token", "auth", "secret", "password")
 
 # Settings whose value is consumed at process start / matcher registration and
 # therefore cannot take effect through a reload.
-RESTART_ONLY_KEYS = frozenset({"AGENT_CHAT_DATA_DIR", "AGENT_CHAT_PRIORITY"})
+RESTART_ONLY_KEYS = frozenset({"AGENT_CHAT_PRIORITY"})
 
 KEY_TO_FIELD: dict[str, str] = {field.upper(): field for field in Config.model_fields}
 # Read by the CLI itself (paths/bootstrap), not by the settings model.
 # AGENT_CHAT_ENV_FILE is restart-only for that CLI process: it resolved the path
 # at start, so a reload cannot move it.
-CLI_ONLY_KEYS = frozenset({"AGENT_CHAT_DEBUG_DATA_DIR", "AGENT_CHAT_ENV_FILE"})
+CLI_ONLY_KEYS = frozenset({"AGENT_CHAT_ENV_FILE"})
 
 # Where a value comes from, and the single source of truth for its wording.
 SettingSource = Literal["env", "file", "default"]
@@ -158,12 +158,6 @@ def unwrap_optional(annotation: object) -> tuple[object, bool]:
         if len(args) == 1:
             return args[0], True
     return annotation, False
-
-
-def environment_value(name: str, default: str) -> str:
-    """The real environment value for a key, else the given fallback."""
-
-    return os.getenv(name) or default
 
 
 def annotation_of(model: type[BaseModel], field_name: str) -> object:
@@ -358,9 +352,6 @@ def build_editing_config(
     environment = os.environ if environ is None else environ
     normalized = {key.upper(): value for key, value in environment.items()}
     values = Config.model_construct().model_dump()
-    default_data_dir, default_profile_dir = _default_dirs()
-    values["agent_chat_data_dir"] = default_data_dir
-    values["agent_chat_profile_dir"] = default_profile_dir
     invalid: list[str] = []
     for key, field in KEY_TO_FIELD.items():
         if key not in normalized:

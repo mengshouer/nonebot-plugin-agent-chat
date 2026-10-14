@@ -384,18 +384,6 @@ def _require_env_file(env_file: Path | None) -> Path:
     return env_file
 
 
-def production_data_dir(args: argparse.Namespace, env_file: Path | None) -> Path:
-    """The bot's store: environment first, then the dotenv file, then default."""
-
-    file_values = read_values(env_file) if env_file is not None else {}
-    return args.data_dir or Path(
-        config_editor.environment_value(
-            "AGENT_CHAT_DATA_DIR",
-            file_values.get("AGENT_CHAT_DATA_DIR") or "data/agent_chat",
-        )
-    )
-
-
 def _format_config_listing(
     listing: config_editor.ConfigList, file_values: Mapping[str, str]
 ) -> list[str]:

@@ -20,6 +20,7 @@ from nonebot_plugin_agent_chat.errors import (
 )
 from nonebot_plugin_agent_chat.input import CollectedInput
 from nonebot_plugin_agent_chat.models import AgentImage, RunResult, Usage
+from nonebot_plugin_agent_chat.paths import StoragePaths
 from nonebot_plugin_agent_chat.service import AgentChatService
 from nonebot_plugin_agent_chat.tools import (
     ToolOutput,
@@ -51,12 +52,11 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
         self.env_path = self.root / ".env.agent_chat"
         self.service = AgentChatService(
             Config(
-                agent_chat_data_dir=self.root / "data",
-                agent_chat_profile_dir=self.profiles,
                 agent_chat_default_profile="primary",
                 agent_chat_global_concurrency=2,
                 agent_chat_cleanup_interval_seconds=0,
             ),
+            paths=StoragePaths(self.root / "data", self.profiles),
             env_file=self.env_path,
         )
         await self.service.initialize()
@@ -261,7 +261,7 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
         await self.service.store.set_setting("active_profile", "renamed-away")
         await self.service.store.close()
 
-        restarted = AgentChatService(self.service.config)
+        restarted = AgentChatService(self.service.config, paths=self.service.paths)
         await restarted.initialize()
         try:
             self.assertEqual(restarted.active_profile_name, "primary")
@@ -284,7 +284,7 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.service.active_profile_name, "other")
 
-        restarted = AgentChatService(self.service.config)
+        restarted = AgentChatService(self.service.config, paths=self.service.paths)
         await restarted.initialize()
         try:
             self.assertEqual(restarted.active_profile_name, "primary")
@@ -307,7 +307,7 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
         config = self.service.config.model_copy(
             update={"agent_chat_default_profile": "deleted-name"}
         )
-        service = AgentChatService(config)
+        service = AgentChatService(config, paths=self.service.paths)
         await service.initialize()
         try:
             self.assertIsNotNone(service.startup_error)
@@ -326,7 +326,7 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
         config = self.service.config.model_copy(
             update={"agent_chat_default_profile": "deleted-name"}
         )
-        service = AgentChatService(config)
+        service = AgentChatService(config, paths=self.service.paths)
         await service.initialize()
         try:
             self.assertIsNotNone(service.startup_error)
@@ -468,7 +468,7 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text("12345.0\n", encoding="utf-8")
 
-        restarted = AgentChatService(self.service.config)
+        restarted = AgentChatService(self.service.config, paths=self.service.paths)
         await restarted.initialize()
         try:
             self.assertFalse(await restarted.apply_pending_reload())
@@ -631,6 +631,7 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
             ),
             tool_registry=registry,
             env_file=self.env_path,
+            paths=self.service.paths,
         )
         with patch.dict(os.environ, {}, clear=True):
             self.env_path.write_text(
@@ -1021,7 +1022,7 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
         assert stored is not None
         self.assertEqual(stored.profile, "other")
         # The switch is durable domain data: a new service instance sees it.
-        restarted = AgentChatService(self.service.config)
+        restarted = AgentChatService(self.service.config, paths=self.service.paths)
         await restarted.initialize()
         try:
             reloaded = await restarted.store.active_room("room-switch")

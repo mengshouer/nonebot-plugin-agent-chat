@@ -1,5 +1,18 @@
 # 更新记录
 
+## [0.1.2] - 2026-10-13
+
+### 变更
+
+- 数据与 Profile 目录统一由 `nonebot-plugin-localstore` 的插件数据目录决定（`profiles/`、`prompts/`、`images/`、`agent_chat.db` 均位于该数据目录下）：**移除 `AGENT_CHAT_DATA_DIR`、`AGENT_CHAT_PROFILE_DIR` 与 `AGENT_CHAT_DEBUG_DATA_DIR` 配置项**。要改位置请在 Bot 的全局 `.env` / `.env.prod` 中配置 localstore 自己的 `LOCALSTORE_*`（例如 `LOCALSTORE_USE_CWD=true` 或 `LOCALSTORE_DATA_DIR`）。
+- CLI 会按 Bot 的 NoneBot 配置解析 localstore 目录，因此 `--reload`、`--rule-*`、`--config-*` 与 Bot 读写同一份数据。`--data-dir` / `--profiles-dir` 仍可显式覆盖（调试数据默认在 `<数据目录>/debug/`）。
+- README、高级用法与示例配置改为说明 localstore 目录规则与 `LOCALSTORE_*` 用法。
+
+### 升级注意
+
+- 旧版 `data/agent_chat/` 不再自动优先或迁移；如果仍要使用其中的数据，请按照新的 localstore 配置手动移动到对应的插件数据目录（如 `<数据目录>/profiles/`、`<数据目录>/prompts/`）。`.env.agent_chat` 里残留的旧目录键会被当作未知键忽略。
+- 未显式配置 `LOCALSTORE_*` 时文件位于系统用户数据目录（如 Linux 下的 `~/.local/share/nonebot2/nonebot_plugin_agent_chat`）；要跟随 Bot 工作目录请设置 `LOCALSTORE_USE_CWD=true`。
+
 ## [0.1.1] - 2026-10-09
 
 ### 变更

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nonebot-plugin-agent-chat"
-version = "0.1.1"
+version = "0.1.2"
 description = "A bounded multi-provider LLM agent plugin for NoneBot2"
 readme = "README.md"
 requires-python = ">=3.10,<4.0"

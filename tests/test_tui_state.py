@@ -49,7 +49,7 @@ class SettingsPanelTests(unittest.TestCase):
         self.assertEqual(row.type_hint, "整数")
         self.assertEqual(row.default, "10")
         self.assertFalse(row.restart_required)
-        self.assertTrue(rows["AGENT_CHAT_DATA_DIR"].restart_required)
+        self.assertTrue(rows["AGENT_CHAT_PRIORITY"].restart_required)
 
     def test_filter_keeps_only_matching_keys(self) -> None:
         keys = [row.key for row in self.panel.rows("max_search")]
@@ -98,14 +98,14 @@ class SettingsPanelTests(unittest.TestCase):
 
     def test_save_writes_comments_and_reports_restart_keys(self) -> None:
         self.panel.stage_set("AGENT_CHAT_MAX_SEARCHES", "5")
-        self.panel.stage_set("AGENT_CHAT_DATA_DIR", "/tmp/elsewhere")
+        self.panel.stage_set("AGENT_CHAT_PRIORITY", "30")
         actions, restart = self.panel.save()
 
         text = self.env_path.read_text()
         self.assertIn("# keep me", text)
         self.assertIn("AGENT_CHAT_MAX_SEARCHES=5", text)
-        self.assertIn("AGENT_CHAT_DATA_DIR=/tmp/elsewhere", text)
-        self.assertEqual(restart, ["AGENT_CHAT_DATA_DIR"])
+        self.assertIn("AGENT_CHAT_PRIORITY=30", text)
+        self.assertEqual(restart, ["AGENT_CHAT_PRIORITY"])
         self.assertEqual(len(actions), 2)
         self.assertFalse(self.panel.dirty)
         self.assertEqual(self.panel.config.agent_chat_max_searches, 5)

@@ -8,6 +8,7 @@ from pathlib import Path
 from nonebot_plugin_agent_chat.config import Config
 from nonebot_plugin_agent_chat.errors import ProviderError, ProviderIncompleteError
 from nonebot_plugin_agent_chat.models import AgentImage, AgentMessage, RunResult, Usage
+from nonebot_plugin_agent_chat.paths import StoragePaths
 from nonebot_plugin_agent_chat.profiles import LoadedProfile
 from nonebot_plugin_agent_chat.runner import RunnerBudget
 from nonebot_plugin_agent_chat.service import AgentChatService
@@ -16,8 +17,14 @@ Outcome = RunResult | BaseException
 
 
 class FakeService(AgentChatService):
-    def __init__(self, config: Config, outcomes: dict[str, list[Outcome]]) -> None:
-        super().__init__(config)
+    def __init__(
+        self,
+        config: Config,
+        outcomes: dict[str, list[Outcome]],
+        *,
+        paths: StoragePaths | None = None,
+    ) -> None:
+        super().__init__(config, paths=paths)
         self.outcomes = outcomes
         self.attempts: list[str] = []
         self.budgets: list[RunnerBudget | None] = []
@@ -60,11 +67,11 @@ class FallbackTests(unittest.IsolatedAsyncioTestCase):
         for name, value in values.items():
             (directory / f"{name}.json").write_text(json.dumps(value), encoding="utf-8")
         config = Config(
-            agent_chat_data_dir=directory / "data",
-            agent_chat_profile_dir=directory,
             agent_chat_default_profile="primary",
         )
-        service = FakeService(config, outcomes)
+        service = FakeService(
+            config, outcomes, paths=StoragePaths(directory / "data", directory)
+        )
         service.profiles.load()
         service._active_profile = "primary"
         return service

@@ -18,6 +18,7 @@ from .formatting import append_sources
 from .images import ImageBudget, load_local_image
 from .input import CollectedInput
 from .models import AgentImage, ReasoningEffort, RunResult
+from .paths import StoragePaths
 from .platforms import ConversationRef, SupportScope, scope_value
 from .prompts import PromptRegistry
 from .service import AgentChatService
@@ -29,7 +30,6 @@ from .settings_cli import (
     interactive_profile,
     interactive_reload,
     is_settings_action,
-    production_data_dir,
     run_settings_command,
 )
 
@@ -287,21 +287,6 @@ async def _render_image_command(args: argparse.Namespace) -> int:
     finally:
         await close_shared_renderer()
     return 0
-
-
-def _paths(args: argparse.Namespace, config: Config) -> tuple[Path, Path, str | None]:
-    """Resolve profile/debug paths; the Config already read the environment."""
-
-    profiles = args.profiles_dir or config.agent_chat_profile_dir
-    # AGENT_CHAT_DEBUG_DATA_DIR is CLI-only: it has no Config field and is never
-    # read by the bot itself.
-    data = args.data_dir or Path(
-        config_editor.environment_value(
-            "AGENT_CHAT_DEBUG_DATA_DIR", "data/agent_chat/debug"
-        )
-    )
-    profile = args.profile or config.agent_chat_default_profile
-    return profiles, data, profile
 
 
 async def _load_images(paths: list[Path], config: Config) -> list[AgentImage]:
@@ -659,30 +644,37 @@ async def run_cli(args: argparse.Namespace) -> int:
         return await _render_image_command(args)
 
     # Edits and reload requests belong to the bot's store, not the debug one.
-    bot_data_dir = production_data_dir(args, env_file)
+    # Explicit flags skip the corresponding store lookup, so the CLI stays
+    # usable without a readable bot configuration.
+    paths = StoragePaths.resolve(
+        data_dir=args.data_dir,
+        profile_dir=args.profiles_dir,
+        initialize_driver=True,
+    )
     if is_settings_action(args):
         # A single invalid dotenv value must not lock the operator out of the
         # commands that repair it: edit actions run against a best-effort config
         # and report the keys that had to fall back to their defaults.
         editing_config, invalid_keys = config_editor.build_editing_config()
-        profile_dir, _data_dir, _selected = _paths(args, editing_config)
         return await run_settings_command(
             args,
             env_file,
             env_owned,
             editing_config,
-            profile_dir,
-            bot_data_dir,
+            paths.profile_dir,
+            paths.data_dir,
             invalid_keys=invalid_keys,
         )
     environment_config = config_editor.environment_config()
-    profile_dir, data_dir, selected = _paths(args, environment_config)
+    selected = args.profile or environment_config.agent_chat_default_profile
     if args.profile_list or args.check:
+        # Profile inspection describes the bot's data, not the CLI-only debug
+        # session.  An explicit --data-dir remains the inspection override.
         return inspect_profiles(
-            profile_dir,
+            paths.profile_dir,
             selected,
             PromptRegistry(
-                data_dir / "prompts",
+                paths.prompt_dir,
                 environment_config.agent_chat_default_system_prompt_file,
             ),
             check_credentials=args.check,
@@ -692,12 +684,13 @@ async def run_cli(args: argparse.Namespace) -> int:
     # rules too, so it reads the same store unless --data-dir overrides it.
     rule_action = bool(args.rule_list or args.rule_set is not None or args.rule_unset)
     reads_bot_store = rule_action or (args.scope and not args.room)
-    if reads_bot_store and args.data_dir is None:
-        data_dir = environment_config.agent_chat_data_dir
+    data_dir = (
+        paths.data_dir
+        if reads_bot_store or args.data_dir is not None
+        else paths.debug_dir
+    )
     config = environment_config.model_copy(
         update={
-            "agent_chat_data_dir": data_dir,
-            "agent_chat_profile_dir": profile_dir,
             "agent_chat_default_profile": selected,
             "agent_chat_room_enabled": (
                 args.room or environment_config.agent_chat_room_enabled
@@ -708,6 +701,7 @@ async def run_cli(args: argparse.Namespace) -> int:
         config,
         env_file=env_file,
         env_owned=env_owned,
+        paths=StoragePaths(data_dir, paths.profile_dir),
     )
     try:
         # Managing rules or trialling them against the bot's store must never
@@ -762,8 +756,8 @@ async def run_cli(args: argparse.Namespace) -> int:
                 debug=args.debug,
                 conversation=conversation,
                 env_file=env_file,
-                profile_dir=profile_dir,
-                bot_data_dir=bot_data_dir,
+                profile_dir=paths.profile_dir,
+                bot_data_dir=paths.data_dir,
             )
         return 0
     finally:

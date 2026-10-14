@@ -117,8 +117,8 @@ class ListingTests(unittest.TestCase):
         by_key = {entry.key: entry for entry in listing.entries}
         self.assertEqual(by_key["AGENT_CHAT_MAX_SEARCHES"].source, "file")
         self.assertEqual(by_key["AGENT_CHAT_MAX_MODEL_TURNS"].source, "default")
-        self.assertEqual(by_key["AGENT_CHAT_DATA_DIR"].source, "default")
-        self.assertTrue(by_key["AGENT_CHAT_DATA_DIR"].restart_required)
+        self.assertEqual(by_key["AGENT_CHAT_PRIORITY"].source, "default")
+        self.assertTrue(by_key["AGENT_CHAT_PRIORITY"].restart_required)
         self.assertFalse(by_key["AGENT_CHAT_MAX_SEARCHES"].restart_required)
         self.assertEqual(listing.unknown_keys, ["AGENT_CHAT_TYPO_KEY"])
         self.assertEqual(listing.cli_only_keys, ["AGENT_CHAT_ENV_FILE"])
@@ -285,13 +285,11 @@ class DiffTests(unittest.TestCase):
         new = Config(
             _env_file=None,
             agent_chat_max_searches=5,
-            agent_chat_data_dir="elsewhere",
+            agent_chat_priority=3,
         )
         applied, restart = config_editor.diff_configs(old, new)
         self.assertEqual(applied, {"AGENT_CHAT_MAX_SEARCHES": ("10", "5")})
-        self.assertEqual(
-            restart, {"AGENT_CHAT_DATA_DIR": ("data/agent_chat", "elsewhere")}
-        )
+        self.assertEqual(restart, {"AGENT_CHAT_PRIORITY": ("20", "3")})
         lines = config_editor.format_report(applied, restart)
         self.assertTrue(any("AGENT_CHAT_MAX_SEARCHES" in line for line in lines))
         self.assertTrue(any("需重启" in line for line in lines))

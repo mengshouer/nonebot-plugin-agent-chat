@@ -15,6 +15,7 @@ from nonebot_plugin_agent_chat.errors import (
 )
 from nonebot_plugin_agent_chat.input import CollectedInput
 from nonebot_plugin_agent_chat.models import RunResult, Usage
+from nonebot_plugin_agent_chat.paths import StoragePaths
 from nonebot_plugin_agent_chat.platforms import ConversationRef
 from nonebot_plugin_agent_chat.service import AgentChatService
 
@@ -49,12 +50,11 @@ class ProfileRuleTests(unittest.IsolatedAsyncioTestCase):
             )
         self.service = AgentChatService(
             Config(
-                agent_chat_data_dir=self.root / "data",
-                agent_chat_profile_dir=self.profiles,
                 agent_chat_default_profile="primary",
                 agent_chat_allowed_groups={"QQClient:598683145"},
                 agent_chat_cleanup_interval_seconds=0,
-            )
+            ),
+            paths=StoragePaths(self.root / "data", self.profiles),
         )
         await self.service.initialize()
 
@@ -244,13 +244,13 @@ class ProfileRuleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_wildcard_allowlist_does_not_warn(self) -> None:
         config = Config(
-            agent_chat_data_dir=self.root / "wild",
-            agent_chat_profile_dir=self.profiles,
             agent_chat_default_profile="primary",
             agent_chat_allowed_groups={"QQClient:*"},
             agent_chat_cleanup_interval_seconds=0,
         )
-        wildcard = AgentChatService(config)
+        wildcard = AgentChatService(
+            config, paths=StoragePaths(self.root / "wild", self.profiles)
+        )
         await wildcard.initialize()
         self.addAsyncCleanup(wildcard.close)
 
@@ -313,11 +313,10 @@ class ProfileRuleTests(unittest.IsolatedAsyncioTestCase):
     async def test_effective_profile_survives_a_broken_startup(self) -> None:
         broken = AgentChatService(
             Config(
-                agent_chat_data_dir=self.root / "broken",
-                agent_chat_profile_dir=self.profiles,
                 agent_chat_default_profile="missing",
                 agent_chat_cleanup_interval_seconds=0,
-            )
+            ),
+            paths=StoragePaths(self.root / "broken", self.profiles),
         )
         await broken.initialize()
         self.addAsyncCleanup(broken.close)

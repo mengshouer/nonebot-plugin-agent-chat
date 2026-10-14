@@ -25,6 +25,7 @@ from .image_cache import RoomImageCache
 from .images import ImageBudget
 from .input import CollectedInput
 from .models import AgentImage, AgentMessage, MessageRole, RunResult, SearchMode
+from .paths import StoragePaths
 from .platforms import (
     ConversationRef,
     applicable_rule_rows,
@@ -76,12 +77,14 @@ class AgentChatService:
         secret_resolver: Callable[[str], str | None] = os.getenv,
         env_file: Path | None = None,
         env_owned: set[str] | None = None,
+        paths: StoragePaths | None = None,
     ) -> None:
         self.config = config
-        self.data_dir = config.agent_chat_data_dir.resolve()
-        self.store = AgentStore(self.data_dir / "agent_chat.db")
+        self.paths = paths or StoragePaths.resolve()
+        self.data_dir = self.paths.data_dir
+        self.store = AgentStore(self.paths.database_path)
         self.image_cache = RoomImageCache(
-            self.data_dir / "images",
+            self.paths.image_dir,
             config.agent_chat_room_image_retention_days,
         )
         self.tool_registry = tool_registry
@@ -95,7 +98,7 @@ class AgentChatService:
             self.store,
             tool_registry,
             secret_resolver,
-            self.data_dir,
+            self.paths,
         )
         self.rooms = RoomState(config, self.store, self.image_cache)
         self.guard = RunGuard(config, self.store)

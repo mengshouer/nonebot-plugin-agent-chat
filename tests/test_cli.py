@@ -20,6 +20,7 @@ from nonebot_plugin_agent_chat.cli import (
 from nonebot_plugin_agent_chat.config import Config
 from nonebot_plugin_agent_chat.errors import InputError
 from nonebot_plugin_agent_chat.models import RunResult, Usage
+from nonebot_plugin_agent_chat.paths import StoragePaths
 from nonebot_plugin_agent_chat.prompts import PromptRegistry
 from nonebot_plugin_agent_chat.service import RELOAD_MARKER_FILE, AgentChatService
 from nonebot_plugin_agent_chat.storage import AgentStore
@@ -101,8 +102,8 @@ class PlatformListTests(unittest.IsolatedAsyncioTestCase):
                             side_effect=AssertionError("dotenv must not be loaded"),
                         ),
                         patch(
-                            "nonebot_plugin_agent_chat.cli._paths",
-                            side_effect=AssertionError("profiles must not be read"),
+                            "nonebot_plugin_agent_chat.cli.StoragePaths.resolve",
+                            side_effect=AssertionError("paths must not be resolved"),
                         ),
                         patch(
                             "nonebot_plugin_agent_chat.cli.AgentChatService",
@@ -158,6 +159,36 @@ class CliTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(status, 0)
             self.assertIn("local: protocol=openai-completions", output.getvalue())
 
+    async def test_profile_list_uses_production_prompt_dir_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            profiles = root / "profiles"
+            data = root / "data"
+            profiles.mkdir()
+            (data / "prompts").mkdir(parents=True)
+            (profiles / "local.json").write_text(
+                json.dumps({"protocol": "openai-completions", "model": "local-model"}),
+                encoding="utf-8",
+            )
+            (data / "prompts" / "default.md").write_text(
+                "production prompt", encoding="utf-8"
+            )
+            args = build_parser().parse_args(
+                ["--no-env", "--profiles-dir", str(profiles), "--profile-list"]
+            )
+            output = io.StringIO()
+            with (
+                patch(
+                    "nonebot_plugin_agent_chat.cli.StoragePaths.resolve",
+                    return_value=StoragePaths(data, profiles),
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                status = await run_cli(args)
+
+            self.assertEqual(status, 0)
+            self.assertIn("prompt=global:default.md", output.getvalue())
+
     async def test_list_profiles_uses_data_dir_and_configured_prompt_name(
         self,
     ) -> None:
@@ -206,7 +237,7 @@ class CliTests(unittest.IsolatedAsyncioTestCase):
 
             def __init__(self, config, **kwargs: object) -> None:
                 self.config = config
-                captured["data_dir"] = config.agent_chat_data_dir
+                captured["data_dir"] = kwargs["paths"].data_dir
 
             async def initialize(self, *, interrupt_running: bool = True) -> None:
                 captured["interrupt_running"] = interrupt_running
@@ -232,10 +263,10 @@ class CliTests(unittest.IsolatedAsyncioTestCase):
             async def close(self) -> None:
                 return None
 
-        env = {
-            "AGENT_CHAT_DATA_DIR": "/tmp/bot-store",
-            "AGENT_CHAT_DEBUG_DATA_DIR": "/tmp/debug-store",
-        }
+        def fake_resolve(**kwargs: object) -> StoragePaths:
+            captured["resolve_kwargs"] = kwargs
+            return StoragePaths(Path("/tmp/bot-store"))
+
         for argv, expect_bot_store in (
             (["--no-env", "--profile", "local", "hello"], False),
             (["--no-env", "--profile", "local", "--scope", "QQClient", "hi"], True),
@@ -248,7 +279,7 @@ class CliTests(unittest.IsolatedAsyncioTestCase):
                     patch(
                         "nonebot_plugin_agent_chat.cli.AgentChatService", FakeService
                     ),
-                    patch.dict(os.environ, env),
+                    patch.object(StoragePaths, "resolve", side_effect=fake_resolve),
                     contextlib.redirect_stdout(io.StringIO()),
                     contextlib.redirect_stderr(io.StringIO()),
                 ):
@@ -256,9 +287,20 @@ class CliTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertEqual(status, 0)
                 data_dir = str(captured["data_dir"])
-                expected = "/tmp/bot-store" if expect_bot_store else "/tmp/debug-store"
-                self.assertTrue(data_dir.startswith(expected), data_dir)
+                expected = (
+                    "/tmp/bot-store" if expect_bot_store else "/tmp/bot-store/debug"
+                )
+                self.assertEqual(data_dir, expected)
                 self.assertEqual(captured["interrupt_running"], not expect_bot_store)
+        # Without explicit flags the CLI asks the store, which needs a driver.
+        self.assertEqual(
+            captured["resolve_kwargs"],
+            {
+                "data_dir": None,
+                "profile_dir": None,
+                "initialize_driver": True,
+            },
+        )
 
     async def test_one_shot_cli_runs_without_nonebot(self) -> None:
         closed = False
@@ -301,18 +343,35 @@ class CliTests(unittest.IsolatedAsyncioTestCase):
                 nonlocal closed
                 closed = True
 
-        args = build_parser().parse_args(
-            ["--no-env", "--profile", "local", "--debug", "hello", "world"]
-        )
-        output = io.StringIO()
-        error = io.StringIO()
-        with (
-            patch("nonebot_plugin_agent_chat.cli.AgentChatService", FakeService),
-            patch.dict(os.environ, {"AGENT_CHAT_MAX_MODEL_TURNS": "9"}),
-            contextlib.redirect_stdout(output),
-            contextlib.redirect_stderr(error),
-        ):
-            status = await run_cli(args)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = build_parser().parse_args(
+                [
+                    "--no-env",
+                    "--data-dir",
+                    str(root / "data"),
+                    "--profiles-dir",
+                    str(root / "profiles"),
+                    "--profile",
+                    "local",
+                    "--debug",
+                    "hello",
+                    "world",
+                ]
+            )
+            output = io.StringIO()
+            error = io.StringIO()
+            with (
+                patch("nonebot_plugin_agent_chat.cli.AgentChatService", FakeService),
+                patch(
+                    "nonebot_plugin_agent_chat.paths._store_data_dir_for_plugin",
+                    side_effect=AssertionError("NoneBot must not be initialized"),
+                ),
+                patch.dict(os.environ, {"AGENT_CHAT_MAX_MODEL_TURNS": "9"}),
+                contextlib.redirect_stdout(output),
+                contextlib.redirect_stderr(error),
+            ):
+                status = await run_cli(args)
 
         self.assertEqual(status, 0)
         self.assertIn("local answer", output.getvalue())
@@ -385,7 +444,7 @@ class EditCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((self.data / RELOAD_MARKER_FILE).is_file())
 
     async def test_config_set_restart_only_key_warns(self) -> None:
-        out = await self._run("--config-set", "AGENT_CHAT_DATA_DIR=/tmp/x")
+        out = await self._run("--config-set", "AGENT_CHAT_PRIORITY=30")
         self.assertIn("需重启", out)
 
     async def test_config_set_rejects_unknown_key_and_bad_value(self) -> None:
@@ -414,7 +473,7 @@ class EditCommandTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(entries["AGENT_CHAT_MAX_MODEL_TURNS"]["source"], "env")
         # ...and nothing provided the rest.
         self.assertEqual(entries["AGENT_CHAT_ENABLE_AT"]["source"], "default")
-        self.assertTrue(entries["AGENT_CHAT_DATA_DIR"]["restart_required"])
+        self.assertTrue(entries["AGENT_CHAT_PRIORITY"]["restart_required"])
         self.assertEqual(payload["unmanaged_keys"], [])
 
     async def test_config_list_json_reports_invalid_keys(self) -> None:
@@ -574,10 +633,9 @@ class EditCommandTests(unittest.IsolatedAsyncioTestCase):
         raw = json.loads((self.profiles / "default.json").read_text(encoding="utf-8"))
         self.assertEqual(raw["extra_headers"]["Authorization"], "Bearer s3cret")
 
-    async def test_marker_follows_the_dotenv_data_dir(self) -> None:
-        elsewhere = self.root / "from_env_file"
-        self.env_path.write_text(f"AGENT_CHAT_DATA_DIR={elsewhere}\n", encoding="utf-8")
-        out = await self._run("--reload", with_data_dir=False)
+    async def test_marker_follows_the_selected_data_dir(self) -> None:
+        elsewhere = self.root / "elsewhere"
+        out = await self._run("--data-dir", str(elsewhere), "--reload")
         self.assertIn("已请求重载", out)
         self.assertTrue((elsewhere / RELOAD_MARKER_FILE).is_file())
         self.assertFalse((self.data / "agent_chat.db").exists())
@@ -615,12 +673,11 @@ class InteractiveCommandTests(unittest.IsolatedAsyncioTestCase):
         self.service = AgentChatService(
             Config(
                 _env_file=None,
-                agent_chat_data_dir=self.root / "session",
-                agent_chat_profile_dir=self.profiles,
                 agent_chat_default_profile="default",
                 agent_chat_cleanup_interval_seconds=0,
                 agent_chat_max_searches=3,
             ),
+            paths=StoragePaths(self.root / "session", self.profiles),
             env_file=self.env_path,
         )
         self.service.env_owned = env_file.load_into_environ(self.env_path)

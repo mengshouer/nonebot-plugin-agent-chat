@@ -90,11 +90,11 @@ assert metadata.config is not None
 assert metadata.supported_adapters, "adapter support must be declared"
 
 # Exercise localstore's real caller-plugin detection, not only a fake module.
-from nonebot_plugin_agent_chat.config import Config
-config = Config()
-assert config.agent_chat_data_dir == Path.cwd() / "data" / "nonebot_plugin_agent_chat"
-assert config.agent_chat_profile_dir == (
-    Path.cwd() / "config" / "nonebot_plugin_agent_chat" / "profiles"
+from nonebot_plugin_agent_chat.paths import StoragePaths
+paths = StoragePaths.resolve()
+assert paths.data_dir == Path.cwd() / "data" / "nonebot_plugin_agent_chat"
+assert paths.profile_dir == (
+    Path.cwd() / "data" / "nonebot_plugin_agent_chat" / "profiles"
 )
 """
         with tempfile.TemporaryDirectory() as directory:

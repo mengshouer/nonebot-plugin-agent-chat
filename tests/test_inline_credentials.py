@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from nonebot_plugin_agent_chat.cli import _interactive_command, build_parser, run_cli
 from nonebot_plugin_agent_chat.errors import ProfileCredentialError
 from nonebot_plugin_agent_chat.models import ProviderProfile
+from nonebot_plugin_agent_chat.paths import StoragePaths
 from nonebot_plugin_agent_chat.profiles import ProfileRegistry
 from nonebot_plugin_agent_chat.prompts import PromptRegistry
 
@@ -199,10 +200,9 @@ class CliLeakTests(unittest.IsolatedAsyncioTestCase):
             ),
             encoding="utf-8",
         )
+        self.data = self.root / "data"
         self.env_path = self.root / ".env.agent_chat"
         self.env_path.write_text(
-            f"AGENT_CHAT_DATA_DIR={self.root / 'data'}\n"
-            f"AGENT_CHAT_PROFILE_DIR={self.profiles}\n"
             "AGENT_CHAT_DEFAULT_PROFILE=primary\n"
             "AGENT_CHAT_CLEANUP_INTERVAL_SECONDS=0\n"
             "AGENT_CHAT_MAX_SEARCHES=3\n",
@@ -231,6 +231,8 @@ class CliLeakTests(unittest.IsolatedAsyncioTestCase):
             str(self.env_path),
             "--profiles-dir",
             str(self.profiles),
+            "--data-dir",
+            str(self.data),
             *extra,
         ]
         output, error = io.StringIO(), io.StringIO()
@@ -310,11 +312,10 @@ class CliLeakTests(unittest.IsolatedAsyncioTestCase):
         service = AgentChatService(
             Config(
                 _env_file=None,
-                agent_chat_data_dir=self.root / "session",
-                agent_chat_profile_dir=self.profiles,
                 agent_chat_default_profile="primary",
                 agent_chat_cleanup_interval_seconds=0,
             ),
+            paths=StoragePaths(self.root / "session", self.profiles),
             env_file=self.env_path,
         )
         service.env_owned = env_file.load_into_environ(self.env_path)

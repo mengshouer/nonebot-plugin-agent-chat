@@ -98,7 +98,7 @@ class ExplanationTests(unittest.TestCase):
             "AGENT_CHAT_IMAGE_REPLY_MODE_BY_PLATFORM": (
                 "JSON 映射（平台 → off/auto/always）"
             ),
-            "AGENT_CHAT_DATA_DIR": "路径",
+            "AGENT_CHAT_DEFAULT_SYSTEM_PROMPT_FILE": "字符串",
         }
         for key, expected in cases.items():
             with self.subTest(key=key):

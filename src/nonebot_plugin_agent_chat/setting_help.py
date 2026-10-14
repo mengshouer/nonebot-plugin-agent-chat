@@ -35,10 +35,6 @@ SOURCE_WHERE: dict[str, str] = {
 
 # keyed by the environment-variable name, i.e. the field name upper-cased.
 SETTING_HELP: dict[str, str] = {
-    "AGENT_CHAT_DATA_DIR": (
-        "运行时数据根目录：SQLite、图片缓存、prompts；相对路径按 bot 工作目录解析"
-    ),
-    "AGENT_CHAT_PROFILE_DIR": "profile JSON 目录；文件名（去掉 .json）就是 profile ID",
     "AGENT_CHAT_DEFAULT_PROFILE": (
         "启动时使用的默认 profile；留空时要求目录里只有一个 profile"
     ),

@@ -5,11 +5,11 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from pathlib import Path
 
 from .config import Config
 from .errors import ConfigurationError
 from .models import SearchMode
+from .paths import StoragePaths
 from .profiles import LoadedProfile, ProfileRegistry, ProfileSnapshot
 from .prompts import PromptRegistry
 from .storage import AgentStore
@@ -36,16 +36,16 @@ class ProfileManager:
         store: AgentStore,
         tool_registry: ToolRegistry,
         secret_resolver: Callable[[str], str | None] = os.getenv,
-        data_dir: Path | None = None,
+        paths: StoragePaths | None = None,
     ) -> None:
         self.config = config
         self.store = store
         self.tool_registry = tool_registry
         self.secret_resolver = secret_resolver
-        data_dir = data_dir or config.agent_chat_data_dir.resolve()
-        self.prompt_dir = data_dir / "prompts"
+        self.paths = paths or StoragePaths.resolve()
+        self.prompt_dir = self.paths.prompt_dir
         self.profiles = ProfileRegistry(
-            config.agent_chat_profile_dir.resolve(),
+            self.paths.profile_dir,
             config.agent_chat_default_profile,
             PromptRegistry(
                 self.prompt_dir,
@@ -117,16 +117,19 @@ class ProfileManager:
             return await self.commit_reload(prepared)
 
     def registry_for(self, config: Config) -> ProfileRegistry:
-        """The registry a config describes; the live one when its paths match."""
+        """The registry a config describes; the live one when its prompts match.
+
+        Directories are fixed for the process, so only the prompt settings can
+        describe a different registry.
+        """
 
         if (
-            config.agent_chat_profile_dir == self.config.agent_chat_profile_dir
-            and config.agent_chat_default_system_prompt_file
+            config.agent_chat_default_system_prompt_file
             == self.config.agent_chat_default_system_prompt_file
         ):
             return self.profiles
         return ProfileRegistry(
-            config.agent_chat_profile_dir.resolve(),
+            self.paths.profile_dir,
             config.agent_chat_default_profile,
             PromptRegistry(
                 self.prompt_dir,

@@ -59,11 +59,11 @@ nonebot-agent-chat --platform-list
 - **默认不允许普通用户使用**。只放行你信任的群或用户，避免意外调用费用。
 - NoneBot 的 `SUPERUSERS` 不受上述白名单限制，支持框架的裸 ID 和 adapter 限定 ID 写法。
 - 白名单必须包含平台前缀，裸 ID 会报错；`QQClient:*` 等通配符会放行该平台全部目标，谨慎使用。
-- 将凭据文件和实际使用的数据/配置目录（见下文）加入 **Bot 自己的 `.gitignore`**；插件仓库的规则不会替宿主生效。Linux/macOS 可执行 `chmod 600 .env.agent_chat` 限制文件权限。
+- 将凭据文件加入 **Bot 自己的 `.gitignore`**；插件仓库的规则不会替宿主生效。Linux/macOS 可执行 `chmod 600 .env.agent_chat` 限制文件权限。
 
 ### 2. 配置模型
 
-创建 Profile 文件，将 `model` 替换为服务商提供的模型 ID。默认位置由 [`nonebot-plugin-localstore`](https://github.com/nonebot/plugin-localstore) 决定，Linux 上通常是 `~/.config/nonebot2/nonebot_plugin_agent_chat/profiles/`；如果 Bot 工作目录下已经存在 `data/agent_chat/` 中的既有插件数据，则继续使用 `data/agent_chat/profiles/`。不确定用哪个目录时，在 `.env.agent_chat` 里显式设置 `AGENT_CHAT_PROFILE_DIR`，这样 Bot 和 CLI 会使用同一目录：
+创建 Profile 文件 `profiles/openai-chat.json`，将 `model` 替换为服务商提供的模型 ID。插件根目录由 [`nonebot-plugin-localstore`](https://github.com/nonebot/plugin-localstore) 的数据目录决定（Linux 上通常是 `~/.local/share/nonebot2/nonebot_plugin_agent_chat/`）；要换位置请在 Bot 的全局 `.env` / `.env.prod` 中配置 localstore（`LOCALSTORE_*`），本插件不提供路径设置：
 
 ```json
 {
