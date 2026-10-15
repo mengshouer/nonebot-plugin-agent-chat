@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import time
 import weakref
+from collections.abc import Sequence
 
+from .compaction import estimate_room_tokens, summary_messages
 from .config import Config
 from .errors import RoomError
 from .image_cache import RoomImageCache
@@ -13,7 +15,7 @@ from .storage import AgentRoom, AgentStore, StoredImage, StoredMessage
 
 
 class RoomState:
-    """Agent Room persistence: creation, history, images, pruning, and retention.
+    """Agent Room persistence: creation, history, images, compaction, retention.
 
     These are lock-free primitives; the service serializes them per context with
     ``context_lock`` so a context never runs two room mutations at once.
@@ -73,18 +75,17 @@ class RoomState:
             raise RoomError("当前会话没有活跃的 Agent Room")
         return room
 
+    async def stored_messages(self, room_id: str) -> list[StoredMessage]:
+        return await self.store.room_history(room_id)
+
     async def history(
         self,
         room: AgentRoom,
         current_images: list[AgentImage],
     ) -> list[AgentMessage]:
-        """Load stored turns, spending leftover image budget newest-first."""
+        """Load summary and stored turns, spending image budget newest-first."""
 
-        stored = await self.store.room_history(
-            room.id,
-            self.config.agent_chat_room_max_turns,
-            self.config.agent_chat_room_max_chars,
-        )
+        stored = await self.store.room_history(room.id)
         budget = ImageBudget(
             max_images=self.config.agent_chat_max_images,
             max_image_bytes=self.config.agent_chat_max_image_bytes,
@@ -108,14 +109,16 @@ class RoomState:
             remaining_images -= len(images)
             remaining_bytes -= image_bytes
 
-        return [
+        messages = summary_messages(room.summary)
+        messages.extend(
             AgentMessage(
                 role=MessageRole(message.role),
                 text=message.text,
                 images=loaded_images.get(index, []),
             )
             for index, message in enumerate(stored)
-        ]
+        )
+        return messages
 
     async def append_turn(
         self,
@@ -123,6 +126,8 @@ class RoomState:
         user_text: str,
         images: list[AgentImage],
         answer: str,
+        *,
+        context_tokens: int = 0,
     ) -> None:
         """Persist one exchange, removing any files written by a failed save."""
 
@@ -133,18 +138,31 @@ class RoomState:
                 room.id,
                 StoredMessage(role="user", text=user_text, images=stored_images),
                 StoredMessage(role="assistant", text=answer),
+                context_tokens=context_tokens,
             )
         except BaseException:
             await self.image_cache.delete([image.path for image in stored_images])
             raise
 
-    async def prune(self, room: AgentRoom) -> None:
-        removed = await self.store.prune_room(
-            room.id,
-            self.config.agent_chat_room_max_turns,
-            self.config.agent_chat_room_max_chars,
+    async def apply_compaction(
+        self,
+        room_id: str,
+        *,
+        summary: str,
+        remove_ids: Sequence[int],
+        kept_messages: Sequence[StoredMessage],
+        count_compaction: bool = True,
+    ) -> int:
+        tokens_after = estimate_room_tokens(summary, kept_messages)
+        paths = await self.store.apply_room_compaction(
+            room_id,
+            summary=summary,
+            remove_ids=remove_ids,
+            context_tokens=tokens_after,
+            count_compaction=count_compaction,
         )
-        await self.image_cache.delete(removed)
+        await self.image_cache.delete(paths)
+        return tokens_after
 
     async def cleanup_retention(self) -> None:
         await self.store.cleanup_runs(

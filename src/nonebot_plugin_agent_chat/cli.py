@@ -14,7 +14,7 @@ from . import config_editor
 from .config import Config
 from .env_file import load_into_environ
 from .errors import AgentChatError, ConfigurationError, InputError
-from .formatting import append_sources
+from .formatting import append_sources, format_token_count
 from .images import ImageBudget, load_local_image
 from .input import CollectedInput
 from .models import AgentImage, ReasoningEffort, RunResult
@@ -428,6 +428,7 @@ _INTERACTIVE_HELP = """可用命令：
   :reload                        重读配置文件与 Profile，并请求 Bot 重载
   :status                        查看当前状态
   :new [name]                    新建 Agent Room（需 --room）
+  :compact [focus]               压缩 Agent Room 上下文（需 --room）
   :clear                         清空 Agent Room 历史（需 --room）
   :help                          显示本帮助
   :quit / :q / :exit             退出
@@ -522,6 +523,21 @@ async def _interactive_command(
             return False
         await service.clear_room(_DEBUG_CONTEXT)
         print("room cleared")
+        return False
+    if head == ":compact":
+        if not room:
+            print(":compact requires --room", file=sys.stderr)
+            return False
+        focus = command.partition(" ")[2].strip()
+        outcome = await service.compact_room(
+            _DEBUG_CONTEXT,
+            focus,
+            subject_key=_DEBUG_SUBJECT,
+        )
+        print(
+            f"room compacted: ~{format_token_count(outcome.tokens_before)} -> "
+            f"~{format_token_count(outcome.tokens_after)} tokens"
+        )
         return False
     if head == ":config":
         await interactive_config(

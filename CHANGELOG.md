@@ -1,5 +1,14 @@
 # 更新记录
 
+## [0.1.3] - 2026-10-14
+
+### 新增
+
+- Agent Room 新增滚动上下文压缩（Rolling Context Compaction）：
+  - Profile 新增 `context_window`（默认 `200000` tokens），全局配置新增 `AGENT_CHAT_ROOM_COMPACT_THRESHOLD_PERCENT`（默认 `80`）。
+  - 当累计上下文达到阈值或遇到服务商上下文超限报错时，自动将早期问答滚动压缩为结构化摘要并保留近期原文。
+  - 新增 `/agent_room compact [focus]`（及 CLI `:compact [focus]`）手动压缩命令，并在 `/agent_room status` 中显示当前上下文占用与压缩次数。
+
 ## [0.1.2] - 2026-10-13
 
 ### 变更

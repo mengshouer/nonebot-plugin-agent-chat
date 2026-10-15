@@ -9,6 +9,13 @@ from pathlib import Path
 
 from . import config_editor, env_file
 from .adapters import create_adapter
+from .compaction import (
+    CompactionMode,
+    CompactionOutcome,
+    effective_context_tokens,
+    generate_compaction_summary,
+    plan_compaction,
+)
 from .config import Config
 from .errors import (
     ConfigurationError,
@@ -19,12 +26,20 @@ from .errors import (
     RoomError,
 )
 from .fallback import MAX_FALLBACK_PROFILES, is_compatible
+from .formatting import format_token_count
 from .hooks import HookRegistry, RunContext
 from .hooks import registry as hook_registry
 from .image_cache import RoomImageCache
 from .images import ImageBudget
 from .input import CollectedInput
-from .models import AgentImage, AgentMessage, MessageRole, RunResult, SearchMode
+from .models import (
+    AgentImage,
+    AgentMessage,
+    MessageRole,
+    RunResult,
+    SearchMode,
+    Usage,
+)
 from .paths import StoragePaths
 from .platforms import (
     ConversationRef,
@@ -869,6 +884,33 @@ class AgentChatService:
         self.rooms.ensure_enabled()
         return await self.rooms.status(context_key)
 
+    async def describe_room_status(self, context_key: str) -> str | None:
+        room = await self.room_status(context_key)
+        if room is None:
+            return None
+        stored = await self.rooms.stored_messages(room.id)
+        try:
+            window = self.profiles.get(room.profile).config.context_window
+        except ProfileNotFoundError:
+            return (
+                f"Room: {room.name}\n"
+                f"Profile: {room.profile}（不存在）\n"
+                f"Context: 不可用\n"
+                f"Updated: {room.updated_at}"
+            )
+        tokens = effective_context_tokens(room, stored)
+        percent = round(tokens * 100 / window) if window > 0 else 0
+        threshold = self.config.agent_chat_room_compact_threshold_percent
+        return (
+            f"Room: {room.name}\n"
+            f"Profile: {room.profile}\n"
+            f"Context: ~{format_token_count(tokens)} / "
+            f"{format_token_count(window)} tokens "
+            f"({percent}%, auto-compact at {threshold}%, "
+            f"compactions: {room.compactions})\n"
+            f"Updated: {room.updated_at}"
+        )
+
     async def clear_room(self, context_key: str) -> None:
         self.rooms.ensure_enabled()
         async with self.rooms.context_lock(context_key):
@@ -889,6 +931,147 @@ class AgentChatService:
             await self.rooms.set_profile(room, loaded.name)
             # Re-read so callers see the persisted binding, not the prior one.
             return await self.rooms.require(context_key)
+
+    def _room_profile(self, room: AgentRoom) -> LoadedProfile:
+        try:
+            loaded = self.profiles.get(room.profile)
+        except ProfileNotFoundError as exc:
+            raise RoomError(
+                f"Agent Room 绑定的 profile 已不存在：{room.profile}；"
+                f"请用 /agent_room use <profile> 切换"
+            ) from exc
+        self.profile_manager.validate_root_profile(loaded)
+        return loaded
+
+    async def _compact_room_locked(
+        self,
+        room: AgentRoom,
+        loaded: LoadedProfile,
+        *,
+        mode: CompactionMode = "auto",
+        custom_instructions: str = "",
+    ) -> CompactionOutcome | None:
+        room = await self.rooms.require(room.context_key)
+        stored = await self.rooms.stored_messages(room.id)
+        plan = plan_compaction(
+            room,
+            stored,
+            context_window=loaded.config.context_window,
+            threshold_percent=self.config.agent_chat_room_compact_threshold_percent,
+            max_output_tokens=loaded.config.max_output_tokens,
+            custom_instructions=custom_instructions,
+            mode=mode,
+        )
+        if plan is None:
+            return None
+        api_key = self.profiles.resolve_api_key(loaded.config, self.secret_resolver)
+        try:
+            summary, usage = await generate_compaction_summary(
+                plan,
+                loaded.config,
+                api_key,
+                custom_instructions=custom_instructions,
+            )
+        except ProviderError as exc:
+            if mode == "manual":
+                exc.profile_name = loaded.name
+                raise
+            remove_messages = list(plan.messages_to_summarize)
+            kept_messages = list(plan.kept_messages)
+            if (
+                not room.summary.strip()
+                and not kept_messages
+                and len(remove_messages) > 2
+            ):
+                kept_messages = remove_messages[-2:]
+                remove_messages = remove_messages[:-2]
+            remove_ids = [msg.id for msg in remove_messages if msg.id > 0]
+            logger.warning(
+                "Agent room %s compaction failed for %s; trimmed %d message(s) "
+                "without new summary (prior_summary=%s): %s",
+                mode,
+                room.id,
+                len(remove_messages),
+                bool(room.summary.strip()),
+                exc,
+            )
+            tokens_after = await self.rooms.apply_compaction(
+                room.id,
+                summary=room.summary,
+                remove_ids=remove_ids,
+                kept_messages=kept_messages,
+                count_compaction=False,
+            )
+            return CompactionOutcome(
+                summary=room.summary,
+                summarized_messages=len(remove_messages),
+                kept_messages=len(kept_messages),
+                tokens_before=plan.tokens_before,
+                tokens_after=tokens_after,
+            )
+        tokens_after = await self.rooms.apply_compaction(
+            room.id,
+            summary=summary,
+            remove_ids=plan.remove_ids,
+            kept_messages=plan.kept_messages,
+            count_compaction=True,
+        )
+        return CompactionOutcome(
+            summary=summary,
+            summarized_messages=len(plan.messages_to_summarize),
+            kept_messages=len(plan.kept_messages),
+            tokens_before=plan.tokens_before,
+            tokens_after=tokens_after,
+            usage=usage,
+        )
+
+    async def compact_room(
+        self,
+        context_key: str,
+        custom_instructions: str = "",
+        *,
+        subject_key: str = "",
+    ) -> CompactionOutcome:
+        """Manually compact the active Room's history into a summary."""
+
+        self.rooms.ensure_enabled()
+        requested_room = await self.rooms.require(context_key)
+        outcome_holder: list[CompactionOutcome] = []
+
+        async def operation() -> RunResult:
+            async with self.rooms.context_lock(context_key):
+                self.rooms.ensure_enabled()
+                room = await self.rooms.require(context_key)
+                loaded = self._room_profile(room)
+                outcome = await self._compact_room_locked(
+                    room,
+                    loaded,
+                    mode="manual",
+                    custom_instructions=custom_instructions,
+                )
+                if outcome is None:
+                    raise RoomError("当前 Agent Room 没有可压缩的历史对话")
+                outcome_holder.append(outcome)
+                return RunResult(
+                    text=outcome.summary,
+                    sources=[],
+                    usage=outcome.usage or Usage(),
+                    model_turns=1,
+                    local_tool_calls=0,
+                    searches=0,
+                    actual_profile=loaded.name,
+                )
+
+        await self._guarded_run(
+            subject_key=subject_key or context_key,
+            context_key=context_key,
+            requested_profile=requested_room.profile,
+            operation=operation,
+            enforce_cooldown=False,
+            exclusive_context=True,
+            enforce_daily_quota=False,
+        )
+        return outcome_holder[0]
 
     async def ask_room(
         self,
@@ -922,16 +1105,9 @@ class AgentChatService:
             async with self.rooms.context_lock(context_key):
                 self.rooms.ensure_enabled()
                 room = await self.rooms.require(context_key)
-                try:
-                    # Re-read after waiting: management may have changed the Room
-                    # or its binding. Never substitute a missing bound profile.
-                    loaded = self.profiles.get(room.profile)
-                except ProfileNotFoundError as exc:
-                    raise RoomError(
-                        f"Agent Room 绑定的 profile 已不存在：{room.profile}；"
-                        f"请用 /agent_room use <profile> 切换"
-                    ) from exc
-                self.profile_manager.validate_root_profile(loaded)
+                # Re-read after waiting: management may have changed the Room
+                # or its binding. Never substitute a missing bound profile.
+                loaded = self._room_profile(room)
                 collected = await collect()
                 self._validate_collected_images(collected)
                 history = await self._load_room_history(room, collected.images)
@@ -939,28 +1115,73 @@ class AgentChatService:
                     collected.images or any(message.images for message in history)
                 ):
                     raise InputError("当前 Agent Room 的 profile 不支持图片")
-                history.append(
-                    AgentMessage(
-                        role=MessageRole.USER,
-                        text=collected.text,
-                        images=collected.images,
+                user_message = AgentMessage(
+                    role=MessageRole.USER,
+                    text=collected.text,
+                    images=collected.images,
+                )
+                compaction_usage: Usage | None = None
+                try:
+                    result = await self._run_profile_with_retry(
+                        loaded,
+                        [*history, user_message],
+                        subject_key=subject_key,
+                        context_key=context_key,
+                        budget=RunnerBudget(),
                     )
+                except ProviderError as exc:
+                    if not exc.context_overflow or exc.emitted_text:
+                        raise
+                    compacted = await self._compact_room_locked(
+                        room,
+                        loaded,
+                        mode="overflow",
+                    )
+                    if compacted is None:
+                        raise
+                    compaction_usage = compacted.usage
+                    room = await self.rooms.require(context_key)
+                    history = await self._load_room_history(room, collected.images)
+                    result = await self._run_profile_with_retry(
+                        loaded,
+                        [*history, user_message],
+                        subject_key=subject_key,
+                        context_key=context_key,
+                        budget=RunnerBudget(),
+                    )
+
+                reported_tokens = (
+                    result.usage.input_tokens + result.usage.output_tokens
+                    if result.model_turns == 1
+                    and (result.usage.input_tokens + result.usage.output_tokens) > 0
+                    else 0
                 )
-                budget = RunnerBudget()
-                result = await self._run_profile_with_retry(
-                    loaded,
-                    history,
-                    subject_key=subject_key,
-                    context_key=context_key,
-                    budget=budget,
-                )
+                if compaction_usage is not None:
+                    result.usage.merge(compaction_usage)
                 await self.rooms.append_turn(
                     room,
                     collected.text,
                     collected.images,
                     result.text,
+                    context_tokens=reported_tokens,
                 )
-                await self.rooms.prune(room)
+                try:
+                    post_compacted = await self._compact_room_locked(
+                        room,
+                        loaded,
+                        mode="auto",
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - best-effort post-turn
+                    logger.warning(
+                        "Agent room post-turn compaction skipped for %s: %s",
+                        room.id,
+                        exc,
+                    )
+                else:
+                    if post_compacted is not None and post_compacted.usage is not None:
+                        result.usage.merge(post_compacted.usage)
                 return result
 
         return await self._guarded_run(

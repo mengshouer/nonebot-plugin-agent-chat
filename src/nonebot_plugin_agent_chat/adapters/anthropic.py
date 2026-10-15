@@ -21,6 +21,7 @@ from .base import (
     ProtocolAdapter,
     classify_provider_exception,
     dump_model,
+    is_context_overflow_text,
     read_value,
     unique_sources,
     walk_mappings,
@@ -312,12 +313,16 @@ class AnthropicMessagesAdapter(ProtocolAdapter):
                 elif event_type == "error":
                     error = read_value(event, "error")
                     error_type = str(read_value(error, "type", "") or "")
+                    detail = str(read_value(error, "message", "") or "")
                     raise ProviderError(
                         f"Anthropic stream error: {error_type or 'unknown'}",
                         retriable=error_type
                         in {"overloaded_error", "rate_limit_error", "api_error"},
                         emitted_text=bool(text_parts),
                         error_type=error_type or "anthropic_stream_error",
+                        context_overflow=is_context_overflow_text(
+                            f"{error_type} {detail}"
+                        ),
                     )
                 elif event_type == "message_delta":
                     delta = read_value(event, "delta")
@@ -371,6 +376,15 @@ class AnthropicMessagesAdapter(ProtocolAdapter):
             )
             if call.name:
                 tool_calls.append(call)
+
+        if finish_reason == "model_context_window_exceeded":
+            raise ProviderError(
+                "Anthropic context window exceeded",
+                retriable=False,
+                emitted_text=bool(text_parts),
+                error_type="model_context_window_exceeded",
+                context_overflow=True,
+            )
 
         return ModelTurn(
             text="".join(text_parts),

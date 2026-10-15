@@ -50,12 +50,14 @@ class ProviderError(AgentChatError):
         emitted_text: bool = False,
         status_code: int | None = None,
         error_type: str = "provider_error",
+        context_overflow: bool = False,
     ) -> None:
         super().__init__(message)
         self.retriable = retriable
         self.emitted_text = emitted_text
         self.status_code = status_code
         self.error_type = error_type
+        self.context_overflow = context_overflow
         self.profile_name: str | None = None
 
 

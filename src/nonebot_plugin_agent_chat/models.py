@@ -89,6 +89,7 @@ class ProviderProfile(BaseModel):
     responses_store: bool = False
     fallback_profiles: list[str] = Field(default_factory=list, max_length=2)
     enabled_tools: list[str] = Field(default_factory=list)
+    context_window: int = Field(default=200_000, ge=4096)
     max_output_tokens: int = Field(default=4096, ge=1)
     max_builtin_tool_calls: int = Field(default=10, ge=0)
     request_timeout_seconds: float = Field(default=120.0, gt=0)

@@ -5,6 +5,7 @@ import json
 import secrets
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,7 @@ class StoredMessage:
     role: str
     text: str
     images: list[StoredImage] = field(default_factory=list)
+    id: int = 0
 
 
 def _decode_stored_images(value: object) -> list[StoredImage]:
@@ -59,6 +61,9 @@ class AgentRoom:
     status: str
     created_at: int
     updated_at: int
+    summary: str = ""
+    context_tokens: int = 0
+    compactions: int = 0
 
 
 class AgentStore:
@@ -69,7 +74,7 @@ class AgentStore:
     stamped only after they succeed.
     """
 
-    SCHEMA_VERSION = 4
+    SCHEMA_VERSION = 5
 
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -135,7 +140,10 @@ class AgentStore:
                 status TEXT NOT NULL,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
-                closed_at INTEGER
+                closed_at INTEGER,
+                summary TEXT NOT NULL DEFAULT '',
+                context_tokens INTEGER NOT NULL DEFAULT 0,
+                compactions INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_rooms_active_context
@@ -173,6 +181,21 @@ class AgentStore:
             await connection.execute(
                 "ALTER TABLE runs ADD COLUMN reasoning_tokens "
                 "INTEGER NOT NULL DEFAULT 0"
+            )
+        cursor = await connection.execute("PRAGMA table_info(rooms)")
+        room_columns = {str(row[1]) for row in await cursor.fetchall()}
+        await cursor.close()
+        if "summary" not in room_columns:
+            await connection.execute(
+                "ALTER TABLE rooms ADD COLUMN summary TEXT NOT NULL DEFAULT ''"
+            )
+        if "context_tokens" not in room_columns:
+            await connection.execute(
+                "ALTER TABLE rooms ADD COLUMN context_tokens INTEGER NOT NULL DEFAULT 0"
+            )
+        if "compactions" not in room_columns:
+            await connection.execute(
+                "ALTER TABLE rooms ADD COLUMN compactions INTEGER NOT NULL DEFAULT 0"
             )
         if version < self.SCHEMA_VERSION:
             # Stamped only once the idempotent migrations above have run.
@@ -446,7 +469,8 @@ class AgentStore:
     async def active_room(self, context_key: str) -> AgentRoom | None:
         cursor = await self._db().execute(
             """
-            SELECT id, context_key, name, profile, status, created_at, updated_at
+            SELECT id, context_key, name, profile, status, created_at, updated_at,
+                summary, context_tokens, compactions
             FROM rooms WHERE context_key = ? AND status = 'active'
             """,
             (context_key,),
@@ -463,6 +487,9 @@ class AgentStore:
             status=str(row["status"]),
             created_at=int(row["created_at"]),
             updated_at=int(row["updated_at"]),
+            summary=str(row["summary"] or ""),
+            context_tokens=int(row["context_tokens"] or 0),
+            compactions=int(row["compactions"] or 0),
         )
 
     async def append_exchange(
@@ -470,6 +497,8 @@ class AgentStore:
         room_id: str,
         user: StoredMessage,
         assistant: StoredMessage,
+        *,
+        context_tokens: int = 0,
     ) -> None:
         db = self._db()
         async with self._write_lock:
@@ -508,8 +537,11 @@ class AgentStore:
                         ),
                     )
                 await db.execute(
-                    "UPDATE rooms SET updated_at = ? WHERE id = ?",
-                    (now, room_id),
+                    """
+                    UPDATE rooms SET updated_at = ?, context_tokens = ?
+                    WHERE id = ?
+                    """,
+                    (now, max(0, int(context_tokens)), room_id),
                 )
             except BaseException:
                 await db.rollback()
@@ -517,82 +549,85 @@ class AgentStore:
             else:
                 await db.commit()
 
-    async def room_history(
-        self,
-        room_id: str,
-        max_turns: int,
-        max_chars: int,
-    ) -> list[StoredMessage]:
+    async def room_history(self, room_id: str) -> list[StoredMessage]:
         cursor = await self._db().execute(
             """
-            SELECT role, text, images_json FROM room_messages
-            WHERE room_id = ? ORDER BY sequence DESC LIMIT ?
-            """,
-            (room_id, max_turns * 2),
-        )
-        rows = list(await cursor.fetchall())
-        await cursor.close()
-        rows.reverse()
-
-        messages: list[StoredMessage] = []
-        for row in rows:
-            images = _decode_stored_images(row["images_json"])
-            messages.append(
-                StoredMessage(
-                    role=str(row["role"]), text=str(row["text"]), images=images
-                )
-            )
-
-        while (
-            len(messages) > 2
-            and sum(len(message.text) for message in messages) > max_chars
-        ):
-            messages = messages[2:]
-        return messages
-
-    async def prune_room(
-        self,
-        room_id: str,
-        max_turns: int,
-        max_chars: int,
-    ) -> list[str]:
-        cursor = await self._db().execute(
-            """
-            SELECT id, sequence, text, images_json FROM room_messages
-            WHERE room_id = ? ORDER BY sequence DESC
+            SELECT id, role, text, images_json FROM room_messages
+            WHERE room_id = ? ORDER BY sequence ASC
             """,
             (room_id,),
         )
         rows = list(await cursor.fetchall())
         await cursor.close()
 
-        keep_ids = set()
-        chars = 0
-        kept_turns = 0
-        # Exchanges are committed as adjacent user/assistant pairs. Select whole
-        # pairs from newest to oldest so pruning can never leave half a turn.
-        for index in range(0, len(rows), 2):
-            exchange = rows[index : index + 2]
-            if len(exchange) != 2 or kept_turns >= max_turns:
-                continue
-            exchange_chars = sum(len(str(row["text"])) for row in exchange)
-            if keep_ids and chars + exchange_chars > max_chars:
-                break
-            keep_ids.update(int(row["id"]) for row in exchange)
-            chars += exchange_chars
-            kept_turns += 1
-
-        removed = [row for row in rows if int(row["id"]) not in keep_ids]
-        paths = [
-            path for row in removed for path in _stored_image_paths(row["images_json"])
-        ]
-        if removed:
-            ids = [int(row["id"]) for row in removed]
-            placeholders = ",".join("?" for _ in ids)
-            await self._execute_write(
-                f"DELETE FROM room_messages WHERE id IN ({placeholders})",
-                ids,
+        return [
+            StoredMessage(
+                id=int(row["id"]),
+                role=str(row["role"]),
+                text=str(row["text"]),
+                images=_decode_stored_images(row["images_json"]),
             )
+            for row in rows
+        ]
+
+    async def apply_room_compaction(
+        self,
+        room_id: str,
+        *,
+        summary: str,
+        remove_ids: Sequence[int],
+        context_tokens: int = 0,
+        count_compaction: bool = True,
+    ) -> list[str]:
+        """Atomically update a room's summary and remove compacted messages."""
+
+        ids = [int(item) for item in remove_ids]
+        paths: list[str] = []
+        db = self._db()
+        async with self._write_lock:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                if ids:
+                    placeholders = ",".join("?" for _ in ids)
+                    cursor = await db.execute(
+                        f"SELECT images_json FROM room_messages "
+                        f"WHERE room_id = ? AND id IN ({placeholders})",
+                        (room_id, *ids),
+                    )
+                    rows = list(await cursor.fetchall())
+                    await cursor.close()
+                    paths = [
+                        path
+                        for row in rows
+                        for path in _stored_image_paths(row["images_json"])
+                    ]
+                    await db.execute(
+                        f"DELETE FROM room_messages "
+                        f"WHERE room_id = ? AND id IN ({placeholders})",
+                        (room_id, *ids),
+                    )
+                await db.execute(
+                    """
+                    UPDATE rooms
+                    SET summary = ?,
+                        context_tokens = ?,
+                        compactions = compactions + ?,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        summary,
+                        max(0, int(context_tokens)),
+                        1 if count_compaction else 0,
+                        int(time.time()),
+                        room_id,
+                    ),
+                )
+            except BaseException:
+                await db.rollback()
+                raise
+            else:
+                await db.commit()
         return paths
 
     async def clear_room(self, room_id: str) -> list[str]:
@@ -605,7 +640,14 @@ class AgentStore:
                     "DELETE FROM room_messages WHERE room_id = ?", (room_id,)
                 )
                 await db.execute(
-                    "UPDATE rooms SET updated_at = ? WHERE id = ?",
+                    """
+                    UPDATE rooms
+                    SET summary = '',
+                        context_tokens = 0,
+                        compactions = 0,
+                        updated_at = ?
+                    WHERE id = ?
+                    """,
                     (int(time.time()), room_id),
                 )
             except BaseException:

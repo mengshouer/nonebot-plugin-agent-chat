@@ -33,6 +33,7 @@ nonebot-agent-chat --reload
 | `search_mode` | `off` / `builtin_web_search` / `exa` |
 | `responses_store` | Responses 响应存储开关，默认 `false` |
 | `system_prompt` / `system_prompt_file` | 内联提示词或 Prompt 目录中的 Markdown 文件 |
+| `context_window` | 模型最大上下文窗口（token 数，默认 `200000`；仅用于插件计算压缩时机，不改变服务商真实限制） |
 | `fallback_profiles` | 非递归的候选 Profile ID 列表 |
 | `enabled_tools` | 显式启用的自定义只读工具 |
 
@@ -78,11 +79,12 @@ nonebot-agent-chat --rule-unset --scope QQClient --group 123456789
 /agent_room ask <question>
 /agent_room use <profile>
 /agent_room status
+/agent_room compact [focus]
 /agent_room clear
 /agent_room close
 ```
 
-Room 的提问与回答存入数据库，图片使用本地缓存。`clear` 清除该 Room 历史，`close` 关闭 Room，不等同于删除全部历史数据。不需要持久化请保持默认关闭。
+Room 的提问与回答存入数据库，图片使用本地缓存。当累计上下文达到当前 Profile `context_window`（默认 `200000` tokens）的 `AGENT_CHAT_ROOM_COMPACT_THRESHOLD_PERCENT`（默认 `80%`）或遇到上下文超限报错时，插件会自动将早期问答滚动压缩为结构化摘要并保留近期原文；也可随时执行 `/agent_room compact [关注点]`（CLI 会话内 `:compact [关注点]`）主动压缩。已被归纳进摘要的早期轮次仅保留文字摘要并清理原图缓存，近期未压缩轮次的图片正常保留。`clear` 清除该 Room 历史与摘要，`close` 关闭 Room，不等同于删除全部历史数据。不需要持久化请保持默认关闭。
 
 **同一 Room 忙时，新提问会被拒绝，不会后台排队。** 请求受并发、超时和 `/agentctl cancel` 管理。Room 按会话隔离，Telegram 论坛 topic 另行隔离；同一群/话题的 Room 不是每位提问者独享的私人会话。
 

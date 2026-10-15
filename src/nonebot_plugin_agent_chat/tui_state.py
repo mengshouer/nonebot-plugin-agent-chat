@@ -42,6 +42,7 @@ PROFILE_FIELD_HELP: dict[str, str] = {
     "responses_store": "是否让服务端保存响应（openai-responses 的 store 参数）",
     "fallback_profiles": "失败时依次尝试的 profile（最多 2 个，不递归）",
     "enabled_tools": "显式启用的本地只读工具名",
+    "context_window": "模型最大上下文窗口（token 数，默认 200000）",
     "max_output_tokens": "单次回答的最大输出 token 数",
     "max_builtin_tool_calls": "内置工具（如搜索）最多调用几次",
     "request_timeout_seconds": "单次模型请求超时（秒）",

@@ -21,6 +21,7 @@ from .base import (
     ProtocolAdapter,
     classify_provider_exception,
     dump_model,
+    is_context_overflow_text,
     read_value,
     unique_sources,
     walk_mappings,
@@ -304,6 +305,7 @@ class OpenAIResponsesAdapter(ProtocolAdapter):
                         read_value(event, "response"), "error"
                     )
                     code = str(read_value(error, "code", "") or "")
+                    detail = str(read_value(error, "message", "") or "")
                     retriable = code in {
                         "server_error",
                         "rate_limit_exceeded",
@@ -314,6 +316,7 @@ class OpenAIResponsesAdapter(ProtocolAdapter):
                         retriable=retriable,
                         emitted_text=bool(text_parts or refusal_parts),
                         error_type=code or "response_failed",
+                        context_overflow=is_context_overflow_text(f"{code} {detail}"),
                     )
         except ProviderError:
             raise

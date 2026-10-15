@@ -46,7 +46,7 @@ from .errors import (
     ProviderError,
     RoomError,
 )
-from .formatting import append_sources
+from .formatting import append_sources, format_token_count
 from .image_reply import (
     ImageReplySettings,
     deliver_answer,
@@ -680,16 +680,29 @@ async def _execute_agent_room(
             lines.append(warning)
         await _send_plain_text(bot, event, "\n".join(lines))
     elif command == "status":
-        room = await service.room_status(context)
-        if room is None:
+        status_text = await service.describe_room_status(context)
+        if status_text is None:
             await _send_plain_text(bot, event, "当前没有活跃的 Agent Room")
         else:
-            await _send_plain_text(
-                bot,
-                event,
-                f"Room: {room.name}\nProfile: {room.profile}\n"
-                f"Updated: {room.updated_at}",
+            await _send_plain_text(bot, event, status_text)
+    elif command == "compact":
+        task = asyncio.create_task(
+            service.compact_room(
+                context,
+                value,
+                subject_key=identity.subject_key,
             )
+        )
+        outcome = await task
+        await _send_plain_text(
+            bot,
+            event,
+            f"Agent Room 上下文已压缩："
+            f"~{format_token_count(outcome.tokens_before)} → "
+            f"~{format_token_count(outcome.tokens_after)} tokens"
+            f"（归纳 {outcome.summarized_messages // 2} 轮，"
+            f"保留 {outcome.kept_messages // 2} 轮）",
+        )
     elif command == "use":
         if not value:
             raise InputError("用法：/agent_room use <profile>")
@@ -724,7 +737,7 @@ async def _execute_agent_room(
         result = await task
         await _deliver_result(bot, event, result, identity)
     else:
-        raise InputError("可用命令：new、ask、use、status、clear、close")
+        raise InputError("可用命令：new、ask、use、status、compact、clear、close")
 
 
 @agent_room.handle()

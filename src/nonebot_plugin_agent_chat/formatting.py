@@ -12,3 +12,9 @@ def append_sources(text: str, sources: list[Source], limit: int = 10) -> str:
         label = " ".join(source.title.split())[:200] or url
         lines.append(f"[{index}] {label} - {url}")
     return "\n".join(lines).strip()
+
+
+def format_token_count(tokens: int) -> str:
+    if tokens >= 1000:
+        return f"{tokens / 1000:.1f}k"
+    return str(max(0, tokens))

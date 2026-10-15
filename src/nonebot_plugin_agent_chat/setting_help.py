@@ -59,8 +59,9 @@ SETTING_HELP: dict[str, str] = {
         "自由提问 matcher 的优先级（数字越小越先处理）；注册期读取，改动需重启"
     ),
     "AGENT_CHAT_ROOM_ENABLED": "是否启用 Agent Room 多轮持久会话（仅 superuser 可用）",
-    "AGENT_CHAT_ROOM_MAX_TURNS": "Room 每次提问最多带上的历史条数",
-    "AGENT_CHAT_ROOM_MAX_CHARS": "Room 历史注入的字符上限（与上一条共同截断窗口）",
+    "AGENT_CHAT_ROOM_COMPACT_THRESHOLD_PERCENT": (
+        "Room 自动压缩上下文的窗口占用百分比阈值（20–95）"
+    ),
     "AGENT_CHAT_ROOM_RETENTION_DAYS": "已关闭 Room 的保留天数，超期由清理任务删除",
     "AGENT_CHAT_ROOM_IMAGE_RETENTION_DAYS": "Room 图片缓存的保留天数",
     "AGENT_CHAT_RUN_METADATA_RETENTION_DAYS": (

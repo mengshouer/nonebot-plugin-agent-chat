@@ -31,8 +31,7 @@ class Config(BaseSettings):
     agent_chat_priority: int = Field(default=20, ge=1)
 
     agent_chat_room_enabled: bool = False
-    agent_chat_room_max_turns: int = Field(default=20, ge=1)
-    agent_chat_room_max_chars: int = Field(default=60000, ge=1000)
+    agent_chat_room_compact_threshold_percent: int = Field(default=80, ge=20, le=95)
     agent_chat_room_retention_days: int = Field(default=30, ge=1)
     agent_chat_room_image_retention_days: int = Field(default=7, ge=1)
     agent_chat_run_metadata_retention_days: int = Field(default=30, ge=1)

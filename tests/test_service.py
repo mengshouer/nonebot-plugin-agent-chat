@@ -826,7 +826,7 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(attempts, ["primary", "primary"])
         self.assertEqual(len({id(budget) for budget in budgets}), 1)
         pause.assert_awaited_once_with(0.5)
-        history = await self.service.store.room_history(room.id, 20, 60000)
+        history = await self.service.store.room_history(room.id)
         self.assertEqual(len(history), 2)
 
     async def test_room_mutations_wait_for_active_request(self) -> None:
@@ -873,8 +873,8 @@ class ServiceGuardTests(unittest.IsolatedAsyncioTestCase):
             await ask_task
             new_room = await create_task
 
-        old_history = await self.service.store.room_history(old_room.id, 20, 60000)
-        new_history = await self.service.store.room_history(new_room.id, 20, 60000)
+        old_history = await self.service.store.room_history(old_room.id)
+        new_history = await self.service.store.room_history(new_room.id)
         self.assertEqual(len(old_history), 2)
         self.assertEqual(new_history, [])
 

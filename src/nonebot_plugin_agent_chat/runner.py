@@ -214,6 +214,15 @@ class AgentRunner:
             if turn.text.strip():
                 visible_parts.append(turn.text.strip())
 
+            if turn.finish_reason == "model_context_window_exceeded":
+                raise ProviderError(
+                    "Context window exceeded",
+                    retriable=False,
+                    emitted_text=bool(visible_parts),
+                    error_type="model_context_window_exceeded",
+                    context_overflow=True,
+                )
+
             assistant = AgentMessage(
                 role=MessageRole.ASSISTANT,
                 text=turn.text,
